@@ -43,6 +43,87 @@ herdr-app do layout.switch '{"name":"Cyber-Neon"}'
 - On a first install, switch to another layout and back once: Herdr loads the layout's fonts on the next look change.
 - To go back to your own layout, press `ctrl-shift-l`. Deleting the copied files removes it.
 
+## Radio
+
+A local background player for your own streams, audio folders and playlists,
+with an optional browser handoff for services that stay in their own player.
+**No stations or music ship, and nothing plays on startup.**
+
+1. For in-app playback, install [mpv](https://mpv.io/installation/) on macOS:
+
+   ```sh
+   brew install mpv
+   ```
+
+   Local `mpv` and `python3` must be on Herdr's PATH. Linux is also supported;
+   Windows playback and browser handoff are not implemented. Missing mpv shows
+   `NO RECEIVER // install mpv`; install it and press PLAY again.
+2. Create `radio.json` in Herdr's config folder: normally
+   `~/.config/herdr-app/radio.json`, or `${HERDR_APP_HOME}/radio.json` if overridden.
+   This **inactive example** points only to your own Music folder; use files you
+   have permission to play:
+
+   ```json
+   [
+     { "name": "My music", "url": "~/Music", "genre": "My collection", "note": "My files", "explicit": false }
+   ]
+   ```
+
+   `name` and either `url` or `open` are required; `genre`, `note` and the boolean
+   `explicit` are optional. Set `explicit: true` for an **Explicit content** warning
+   before playback and on the selected/playing station. `url` accepts a permitted
+   direct stream, local audio file, folder, or local M3U/M3U8/PLS playlist. Folders
+   play audio recursively in name order; local playlists preserve their order.
+   Relative paths start at the config folder (playlist entries at the playlist).
+   For browser listening, use `open` with the service's HTTPS page instead of `url`.
+   See [station/source details](mods/cyberneon-radio/NOTES.md#station-list-and-source-api-8).
+3. Click **RADIO OFF** at the right end of the work area's bottom status bar.
+   Choose a station and press **PLAY** (or **OPEN** for a browser entry).
+   Off-state selection and previous/next only browse; while playing, they tune
+   immediately. The volume slider and mute control affect local playback;
+   **OFF** stops it. Closing the tuner leaves local playback running.
+
+The list refreshes automatically without playing. **FIND A STATION** searches
+Radio Browser only when you press Search; **ADD** saves a result without tuning.
+Review the station's terms and content before playing it. Layout-only shortcuts
+are Ctrl-Shift-Right / Left for next / previous station and Ctrl-Shift-M for mute.
+
+**DUCK ON/OFF** defaults on: a newly observed agent transition to blocked lowers
+local audio to 20% of your chosen volume for four seconds, then restores it.
+Your slider level and mute choice are preserved. **ANIM OFF** stops the scrolling
+track title and visual tuning static; playback and ducking continue. Receiver
+loss never resumes automatically; press PLAY to retry. Switching layouts,
+reloading the mod or quitting closes the local player.
+
+**OPEN** stops local audio before handing off to your browser. The chip stays
+OFF and the tuner says **OPENED IN BROWSER**; **CLEAR** dismisses that notice.
+Radio cannot control the browser's volume, playback or tabs, including on quit.
+
+### Sources and permissions
+
+- **[Radio Browser](https://api.radio-browser.info/)** is a directory only;
+  a listing or successful check grants no license to a station's stream.
+- **[SomaFM](https://somafm.com/contact/tos.html)** cannot authorize new third-party
+  clients, including noncommercial ones; it is blocked for in-app playback.
+- **[SoundCloud](https://developers.soundcloud.com/docs/api/terms-of-use#user-content)**
+  prohibits webcasting radio apps under its API terms, so SoundCloud and
+  **[Poolsuite](https://poolsuite.net/)** stay browser-only here; Poolsuite's
+  SoundCloud integration establishes no transferable permission for this project.
+- **[YouTube](https://developers.google.com/youtube/terms/developer-policies#additional-prohibitions)**
+  stays browser-only: its API policies prohibit separating audio/video and hidden
+  background players; this mod does no extraction.
+- **[Creative Commons](https://creativecommons.org/cc-licenses/)** music requires
+  [attribution](https://creativecommons.org/licenses/by/4.0/) under its specific
+  license (creator, source, license link and any
+  changes), plus any applicable NC/ND/SA conditions; a CC label alone is insufficient.
+
+**One More Lawn:** developer permission for this app is pending; none has been
+received and no music is bundled or licensed to this project. The
+[official developer playlist](https://www.youtube.com/playlist?list=PLJ19oo9w4X5A)
+is a browser link only. [Policy evidence and Steam → official @Superdoudev →
+playlist provenance](mods/cyberneon-radio/BROWSER.md#source-policy-evidence) explain
+that distinction; no source-owner messages were sent for this work.
+
 ## What it runs and reaches
 
 - `git` in your spaces' folders: read-only to find branches and remotes, and `git log` / `git show --stat` for the GRAPH page. The only writes come from your clicks on **▶ LAUNCH** or **▶ DISPATCH**: `git worktree add` (making the `milestone-…` or `issue-…` branch if it doesn't exist yet), local only.
@@ -73,6 +154,8 @@ logins, and talk to their own providers.
 - Each `mods/cyberneon-*/NOTES.md`: per-mod details and pitfalls.
 - [`mods/cyberneon-radio/NOTES.md`](mods/cyberneon-radio/NOTES.md): radio engine,
   station setup, tuner controls, dependencies, lifecycle and checks.
+- [`mods/cyberneon-radio/UI.md`](mods/cyberneon-radio/UI.md): tuner, browser handoff and ducking behavior.
+- [`mods/cyberneon-radio/BROWSER.md`](mods/cyberneon-radio/BROWSER.md): primary source policies and playlist provenance.
 - [`mods/cyberneon-radio/SEARCH.md`](mods/cyberneon-radio/SEARCH.md): directory search,
   Add persistence, API references, concurrency limits and isolated checks.
 

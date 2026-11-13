@@ -66,8 +66,8 @@ source. No source is resolved or played on init, refresh or tuner open.
   before reopening/presenting or loading, for both explicit and ordinary stations.
 - Empty/loading lists have explicit readouts. Store/prepare/engine errors appear
   in the tuner, including `NO RECEIVER // install mpv`. The store retains its last
-  good list on malformed JSON. Browser-only entries surface prepare's error;
-  browser opening is owned by #11.
+  good list on malformed JSON. Direct prepare calls reject browser-only entries;
+  the tuner intercepts them for the browser handoff described below.
 - Receiver expiry and recovery follow the reviewed engine: no automatic restart
   or resume. A later explicit PLAY retries; poll and volume/mute never restart.
 
