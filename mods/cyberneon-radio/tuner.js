@@ -8,6 +8,7 @@ export class Tuner {
     this.store = store;
     this.openBrowser = openBrowser;
     this.browserOpened = null;
+    this.volumeControl = engine;
     this.selected = null;
     this.playing = null;
     this.error = null;
@@ -75,7 +76,7 @@ export class Tuner {
     const requested = Array.isArray(prepared.source) ? prepared.source[0] : prepared.source;
     if (!this.closed && state.status === "loading" && state.source === requested) {
       this.playing = prepared.station;
-      await this.engine.volume(this.level);
+      await this.volumeControl.volume(this.level);
       await this.engine.mute(this.silenced);
     }
   }
@@ -113,9 +114,10 @@ export class Tuner {
   volume(value) {
     return this.enqueue(async () => {
       this.level = Math.max(0, Math.min(100, value));
-      if (this.engine.started) await this.engine.volume(this.level);
+      if (this.engine.started) await this.volumeControl.volume(this.level);
     });
   }
+  setVolumeControl(control) { this.volumeControl = control; }
   close() { this.closed = true; this.browserOpened = null; }
 }
 

@@ -1,10 +1,11 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex, Popover, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
-import { theme, shared, nextCommand } from "herdr";
+import { theme, shared, nextCommand, agents, terminals } from "herdr";
 import { RadioEngine } from "./engine.js";
 import { localReceiver } from "./bridge.js";
 import { localStations } from "./station-storage.js";
 import { localBrowser } from "./browser-host.js";
+import { Ducking } from "./ducking.js";
 import { Tuner, staticFrames } from "./tuner.js";
 import { DirectoryPanel } from "./search-ui.js";
 
@@ -19,6 +20,15 @@ export default class Radio extends View {
     this.store = localStations();
     this.directory = new DirectoryPanel(this.store);
     this.tuner = new Tuner(this.engine, this.store, localBrowser());
+
+    this.ducking = new Ducking(this.engine, localStorage.getItem("ducking") !== "off");
+    this.tuner.setVolumeControl(this.ducking);
+    // Host snapshots include agents outside the selected space and background
+    // children. This owner-scoped timer runs while the tuner is dismissed too.
+    cx.timer.every(250, cx => {
+      if (this.tuner.closed) return;
+      cx.spawn(async cx => { await this.ducking.observe(agents(), terminals(), Date.now()); });
+    });
     this.open = false;
     this.tuning = 0;
     this.tuneGeneration = 0;
@@ -130,6 +140,7 @@ export default class Radio extends View {
   async close() {
     this.dismissalGeneration++;
     this.tuner.close();
+    this.ducking?.close();
     this.finishWarning(false);
     // Start receiver cleanup directly, bypassing pending prepare/controls.
     const closing = this.engine.close();
@@ -190,6 +201,14 @@ export default class Radio extends View {
             .range_style(fill => fill.bg(t.working))
             .child(SliderThumb.new(this.volume).size(10).ml(-5).bg(t.accent)))))
         .child(div().w(28).text_color(t.foreground).child(`${Math.round(this.volume.value())}`)))
+      .child(h_flex().gap(8).items_center()
+        .child(this.button("radio-ducking", this.ducking?.enabled ? "DUCK ON" : "DUCK OFF", cx => {
+          const enabled = !this.ducking.enabled;
+          localStorage.setItem("ducking", enabled ? "on" : "off");
+          cx.spawn(async cx => { await this.ducking.setEnabled(enabled); cx.notify(); });
+          cx.notify();
+        }))
+        .child(div().text_size(10).text_color(t.dim).child("AGENT NEEDS YOU // 4s · 20%")))
       .child(div().text_size(10).text_color(t.dim).child(busy ? "TUNING…" : `${on ? state.status.toUpperCase() : "OFF"} // ${list.stations.length} STATIONS`))
       .when(Boolean(error), el => el.child(div().text_color(t.blocked).child(String(error))))
       .when(!station && !list.loading, el => el.child(div().child(`Add your stations to ${list.path || "the radio station file"}. No stations or music are bundled.`)))

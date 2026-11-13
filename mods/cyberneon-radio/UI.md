@@ -153,3 +153,55 @@ The existing layout owner, hidden polling and final receiver close are unchanged
 See [BROWSER.md](BROWSER.md) for helper checks and primary-source policy evidence.
 Preserve the optional `beforePlay` hook for in-app loads when extending this
 method; it belongs to the current action's async View context, not a stored one.
+
+## Attention ducking (#12)
+
+`DUCK ON/OFF` beside the volume controls is usable even while a tune is pending.
+It defaults on; this mod's `localStorage.ducking` remembers `off` across owner
+recreation. It does not depend on ANIM ON/OFF. The bottom status bar stays in its
+original place and the tuner remains the only radio settings surface.
+
+One owner-scoped 250ms timer reads actual host `agents()` and live `terminals()`
+(including background children and remote addresses). The first populated
+snapshot establishes a baseline; pre-existing blocked agents do not duck on
+startup. Later transitions into exactly `blocked` reduce radio volume to **20%
+of the chosen level for four seconds**. Unchanged blocked snapshots never
+retrigger; a new blocked transition extends the deadline to four seconds from
+that event without multiplying attenuation. Last observed statuses survive
+brief disappearance/reconnection, so a returning unchanged blocked snapshot
+also does not retrigger. Transitions shorter than the 250ms sample can be missed.
+
+`ducking.js` owns gain intent and deadline, with no host imports or timers.
+`Tuner.setVolumeControl(control)` delegates volume writes (including after an
+explicit Play) without changing its constructor, browser opener or `beforePlay`
+hook. The slider always displays the user's intended volume; manual edits apply
+the temporary factor while ducked and become the restored level. Mute is left
+entirely to the tuner/engine. Off/receiver loss cancels the deadline; an explicit
+subsequent Play applies the latest intent. Disable restores intent immediately,
+and enable waits for a new blocked edge. No duck operation plays, resumes, opens
+the tuner or browser, or replaces a receiver. Dismissing the tuner keeps ducking
+active; the reviewed pending-play dismissal generation still cancels loads.
+Owner close invalidates duck work before starting immediate receiver cleanup.
+
+Checks:
+
+```sh
+node mods/cyberneon-radio/ducking.check.mjs
+node mods/cyberneon-radio/ducking.integration.mjs
+```
+
+The deterministic check covers host edges, initial/unchanged snapshots,
+overlap/deadlines, manual volume and mute, disable/re-enable, off, receiver loss,
+explicit recovery and queued-close cancellation. `ui.check.mjs` invokes the
+actual owner timer against host snapshot fixtures and clicks the persisted toggle;
+its existing beforePlay/dismissal tests remain in place. Native render fixtures
+validate the row with real builders. The integration check drives real mpv through
+the receiver adapter using generated temporary silence: gain, pause/mute,
+manual changes, restore, disable, guardian expiry, explicit recovery and close.
+The combined `tuner.integration.mjs` additionally runs the actual station store,
+Search/Add persistence and browser handoff while ducked, checking gain and mute
+through real mpv IPC. Browser View warning/dismissal cases (including dismissal
+while stop is pending) run with the gain delegate active. Search storage's numeric
+overflow rejection remains covered by `search.check.mjs`.
+No live layout switch/quit, user config write, bundled media, or audible stream
+check is performed.

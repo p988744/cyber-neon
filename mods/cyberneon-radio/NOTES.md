@@ -255,3 +255,11 @@ any stop/open effect. A handoff stops the local queue, retains the receiver for
 reuse, and never forwards that URL to mpv. Browser state/error presentation and
 policy evidence are documented in [UI.md](UI.md) and [BROWSER.md](BROWSER.md).
 The engine, queue batching, recovery and final-close lifecycle above are unchanged.
+
+## Attention gain (#12)
+
+The optional tuner `DUCK ON/OFF` setting and host transition/timing policy are
+specified in [UI.md](UI.md#attention-ducking-12). `ducking.js` is a separate gain
+controller; engine, receiver lifecycle, source preparation and browser handoff
+retain their existing contracts. Run `ducking.check.mjs` and
+`ducking.integration.mjs` in addition to the tuner/View/native checks.
