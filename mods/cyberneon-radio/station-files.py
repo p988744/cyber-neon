@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Bounded local source expansion. No network requests, shell or config writes."""
+"""Bounded local sources and explicit station saves. No network or shell."""
 import configparser
 import json
 import os
 from pathlib import Path
 import re
 import sys
+import fcntl
+import tempfile
 from urllib.parse import unquote, urlsplit
 
 MAX_BYTES = 1024 * 1024
@@ -22,6 +24,17 @@ def read_text(path):
     if len(data) > MAX_BYTES:
         raise ValueError("Radio file exceeds 1 MiB")
     return data.decode("utf-8-sig")
+
+
+def config_bytes(path):
+    try:
+        with path.open("rb") as stream:
+            data = stream.read(MAX_BYTES + 1)
+    except FileNotFoundError:
+        return None
+    if len(data) > MAX_BYTES:
+        raise ValueError("Radio file exceeds 1 MiB")
+    return data
 
 
 def stream_url(value):
@@ -119,6 +132,72 @@ def resolve_source(value, root):
     return items[0] if len(items) == 1 else items
 
 
+def validate_stations(values):
+    if not isinstance(values, list) or len(values) > MAX_ITEMS:
+        raise ValueError("radio.json must be an array of at most 1000 stations")
+    for station in values:
+        if not isinstance(station, dict):
+            raise ValueError("Expected a station object")
+        for field in ("name", "url", "open", "genre", "note"):
+            if field not in station and field != "name":
+                continue
+            value = station.get(field)
+            if not isinstance(value, str) or not value.strip() or re.search(r"[\x00-\x1f\x7f]", value):
+                raise ValueError(f"Invalid station {field}")
+        if not (station.get("url") or station.get("open")):
+            raise ValueError("Station needs url or open")
+        if "explicit" in station and not isinstance(station["explicit"], bool):
+            raise ValueError("Station explicit must be boolean")
+
+
+def invalid_constant(value):
+    raise ValueError(f"Invalid JSON constant: {value}")
+
+
+def save_station(root, station):
+    validate_stations([station])
+    path = Path(root) / "radio.json"
+    # An editor's symlink must not be replaced with a different regular file.
+    if path.is_symlink():
+        raise ValueError("Cannot save a symlinked radio.json; edit its target manually")
+    with (Path(root) / "radio.json.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            original = config_bytes(path)
+            values = json.loads(original.decode("utf-8-sig"), parse_constant=invalid_constant) if original is not None else []
+            validate_stations(values)
+            source = station.get("open") or station.get("url")
+            if any((s.get("open") or s.get("url")).strip() == source.strip() or
+                   (station.get("radioBrowserId") and s.get("radioBrowserId") == station["radioBrowserId"])
+                   for s in values):
+                return False
+            station.pop("contentWarning", None)  # Derived at read time.
+            values.append(station)
+            validate_stations(values)
+            data = (json.dumps(values, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
+            if len(data) > MAX_BYTES:
+                raise ValueError("Radio file exceeds 1 MiB")
+            fd, temporary = tempfile.mkstemp(prefix=".radio-", dir=root)
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                # App saves serialize; external edits detected before replacement fail safely.
+                latest = config_bytes(path)
+                if path.is_symlink() or latest != original:
+                    raise ValueError("radio.json changed while saving; retry Add")
+                if path.exists():
+                    os.chmod(temporary, path.stat().st_mode & 0o777)
+                os.replace(temporary, path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            return True
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def main():
     action, root, *values = sys.argv[1:]
     if action == "read":
@@ -129,6 +208,8 @@ def main():
             result = "[]"
     elif action == "resolve" and len(values) == 1:
         result = resolve_source(values[0], root)
+    elif action == "save" and len(values) == 1:
+        result = save_station(root, json.loads(values[0]))
     else:
         raise ValueError("Unknown radio storage action")
     print(json.dumps(result, ensure_ascii=False))

@@ -1,0 +1,99 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, readFile, writeFile, rm, mkdir, copyFile, readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { StationStore, parseStations } from "./stations.js";
+import { RadioSearch, directoryStation } from "./search.js";
+const exec = promisify(execFile);
+const root = await mkdtemp(join(tmpdir(), "radio-add-"));
+const path = join(root, "radio.json");
+const helper = fileURLToPath(new URL("station-files.py", import.meta.url));
+const call = async (action, value) => JSON.parse((await exec("python3", [helper, action, root, ...(value === undefined ? [] : [JSON.stringify(value)])])).stdout);
+const makeStore = () => new StationStore({ path, read: () => call("read"), save: station => call("save", station) });
+const row = { name: "Test Radio", url: "https://example.invalid/original", url_resolved: "https://example.invalid/live", stationuuid: "test-uuid", countrycode: "TW", codec: "MP3", bitrate: 128, lastcheckok: 1, lastchecktime_iso8601: "2026-11-13T00:00:00Z" };
+try {
+  const store = makeStore();
+  const search = new RadioSearch({ search: async tag => { assert.equal(tag, "lofi"); return [row, { name: "bad", url: "file:///tmp/music.wav" }]; } }, store);
+  await search.search("lofi");
+  assert.equal(search.snapshot().results.length, 1);
+  const station = search.snapshot().results[0];
+  assert.equal(station.url, row.url_resolved);
+  assert.equal(station.country, "TW");
+  assert.equal(station.lastCheckOK, true);
+  assert.equal(directoryStation({ ...row, lastcheckok: undefined }).lastCheckOK, null, "missing last check remains unknown");
+  await search.add(station);
+  assert.equal(store.snapshot().stations.length, 1);
+  assert.equal(search.snapshot().message, "Saved Test Radio");
+  await search.add(station);
+  assert.equal(JSON.parse(await readFile(path, "utf8")).length, 1, "repeated Add is idempotent");
+  const manual = { name: "Manual", url: "~/Music", note: "Keep my edits", extra: { preserve: true } };
+  await writeFile(path, JSON.stringify([manual]));
+  await search.add(station);
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8"))[0], manual, "save reads current disk, preserves external additions and metadata");
+  await Promise.all(Array.from({ length: 8 }, (_, i) => makeStore().save({ name: `Concurrent ${i}`, url: `https://example.invalid/${i}` })));
+  assert.equal(JSON.parse(await readFile(path, "utf8")).length, 10, "parallel saves never lose entries");
+  for (const invalid of ["[", '[{"name":"Incomplete"}]', "{}", '[{"name":"Invalid JSON","url":"~/Music","extra":NaN}]'] ) {
+    await writeFile(path, invalid);
+    await search.add(station);
+    assert.ok(search.snapshot().error);
+    assert.equal(await readFile(path, "utf8"), invalid, "never overwrite malformed user edits");
+  }
+  // Exact review regression: valid JS JSON overflows Python float parsing.
+  // Exercise the actual localStations adapter, preserving the original bytes.
+  const folder = join(root, "mods/cyberneon-radio");
+  await mkdir(folder, { recursive: true });
+  await copyFile(helper, join(folder, "station-files.py"));
+  globalThis.__searchStorageHost = { appHome: () => root, exec: async (program, args, options) => {
+    try { return { ...(await exec(program, args, options)), code: 0 }; }
+    catch (error) { if (typeof error.code !== "number") throw error; return { code: error.code, stdout: error.stdout, stderr: error.stderr }; }
+  } };
+  const adapter = (await readFile(new URL("station-storage.js", import.meta.url), "utf8"))
+    .replace('import { exec, appHome } from "herdr";', 'const { exec, appHome } = globalThis.__searchStorageHost;')
+    .replace('"./stations.js"', JSON.stringify(new URL("stations.js", import.meta.url).href));
+  const { localStations } = await import(`data:text/javascript;base64,${Buffer.from(adapter).toString("base64")}`);
+  const actualStore = localStations();
+  const overflow = Buffer.from('[{"name":"Manual","url":"~/Music","extra":1e309}]');
+  await writeFile(path, overflow);
+  assert.equal(parseStations(overflow.toString())[0].extra, Infinity);
+  await actualStore.refresh();
+  assert.equal(actualStore.snapshot().error, null, "overflow JSON is accepted by the actual JS reader");
+  await assert.rejects(actualStore.save(station), /Out of range float values/);
+  assert.deepEqual(await readFile(path), overflow, "rejected Add retains exact original bytes");
+  assert.equal(parseStations((await readFile(path)).toString())[0].extra, Infinity, "original remains valid for the JS parser");
+  assert.equal((await readdir(root)).some(name => name.startsWith(".radio-")), false, "no temporary write artifact remains");
+  await writeFile(path, JSON.stringify([manual]));
+  await actualStore.save(station);
+  assert.equal(actualStore.snapshot().stations.length, 2, "ordinary save still works and rejection released the lock");
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8"))[0], manual);
+  await writeFile(path, JSON.stringify(Array.from({ length: 1000 }, (_, i) => ({ name: `${i}`, url: `https://example.invalid/${i}` }))));
+  await assert.rejects(store.save(station), /1000/);
+  let resolveOld;
+  const racing = new RadioSearch({ search: tag => tag === "ambient" ? new Promise(resolve => { resolveOld = resolve; }) : Promise.resolve([row]) }, store);
+  const old = racing.search("ambient");
+  await racing.search("lofi");
+  resolveOld([]);
+  await old;
+  assert.equal(racing.snapshot().results.length, 1, "late response cannot overwrite newer search");
+  await racing.search("");
+  assert.match(racing.snapshot().error, /tag/);
+  const failed = new RadioSearch({ search: async () => { throw new Error("Offline"); } }, store);
+  await failed.search("ambient");
+  assert.equal(failed.snapshot().error, "Offline");
+  let releaseRead;
+  let disk = "[]", reads = 0;
+  const refreshing = new StationStore({ read: () => ++reads === 1 ? new Promise(resolve => { releaseRead = resolve; }) : Promise.resolve(disk),
+    save: async value => { disk = JSON.stringify([value]); } });
+  const staleRefresh = refreshing.refresh();
+  await Promise.resolve();
+  const saving = refreshing.save(station);
+  await Promise.resolve();
+  releaseRead("[]");
+  await staleRefresh;
+  await saving;
+  assert.equal(refreshing.snapshot().stations.length, 1, "save refreshes after an older in-flight read completes");
+  assert.throws(() => directoryStation({ name: "bad", url: "edl://bad" }));
+  console.log("search.check ok (metadata, errors, stale responses, add, duplicates, live edits, concurrent saves, bounds)");
+} finally { delete globalThis.__searchStorageHost; await rm(root, { recursive: true, force: true }); }

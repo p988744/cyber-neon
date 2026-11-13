@@ -75,4 +75,12 @@ export class StationStore {
     const source = await this.adapter.resolve(station.url);
     return { station, source };
   }
+  async save(value) {
+    const station = stationMetadata(value);
+    if (!this.adapter.save) throw new Error("Station storage is read-only");
+    // The adapter appends against the current disk contents, never this snapshot.
+    await this.adapter.save(station);
+    if (this.pending) await this.pending;
+    return this.refresh();
+  }
 }

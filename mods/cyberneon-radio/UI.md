@@ -111,12 +111,22 @@ scratch radio.json and local files, through `Tuner` and the real engine/mpv. It
 checks pre-load warning ordering, ordered folder queues, single-file replacement, mute/volume, malformed
 edits, browser-only errors and receiver reuse without reading user config.
 
-## Follow-on UI seams
+## Directory search and Add (#9)
 
-The `panel()` method owns the tuner content; its station list/footer area is the
-extension point for #9 search/add controls. `this.store` is the existing store;
-`this.tuner.choose(station)` is an explicit selection/tune action. Saving or
-refreshing the list should never call choose/play by itself.
+`panel()` renders `DirectoryPanel` beneath the station list/footer. Expand
+**FIND A STATION**, choose synthwave/lofi/cyberpunk/ambient or enter another tag
+and press Search. Each result shows name, country, codec/bitrate and last directory
+check status/time. Add persists in one click and displays SAVED. Search/Add
+errors and empty/loading states stay in that section for retry. The directory
+is not a license grant; the station's terms apply.
+
+`this.directory` uses the existing `this.store`; Search and Add never call
+`this.tuner.choose`, prepare or play. No request runs on init, panel opening or
+refresh. Closing the owner invalidates directory completions after receiver
+cleanup has started. [SEARCH.md](SEARCH.md) documents API/storage behavior and
+isolated native fixtures. The original status-bar placement is unchanged.
+
+## Follow-on UI seams
 
 #11 can extend `Tuner.play(station)` inside the existing serialized UI queue with
 an injected browser opener, while preserving the one layout owner. Browser-open

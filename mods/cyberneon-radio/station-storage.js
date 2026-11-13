@@ -10,5 +10,5 @@ export function localStations() {
     if (result.code !== 0) throw new Error(result.stderr?.trim() || "Cannot read radio sources");
     return JSON.parse(result.stdout);
   }
-  return new StationStore({ path, read: () => call("read"), resolve: (url) => call("resolve", url) });
+  return new StationStore({ path, read: () => call("read"), resolve: (url) => call("resolve", url), save: (station) => call("save", JSON.stringify(station)) });
 }

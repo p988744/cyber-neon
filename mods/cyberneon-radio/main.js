@@ -5,6 +5,7 @@ import { RadioEngine } from "./engine.js";
 import { localReceiver } from "./bridge.js";
 import { localStations } from "./station-storage.js";
 import { Tuner, staticFrames } from "./tuner.js";
+import { DirectoryPanel } from "./search-ui.js";
 
 const anim = () => shared("cyberneon.animations") !== false;
 const STATIC = staticFrames();
@@ -15,6 +16,7 @@ export default class Radio extends View {
   init(_props, cx) {
     this.engine = new RadioEngine(localReceiver());
     this.store = localStations();
+    this.directory = new DirectoryPanel(this.store);
     this.tuner = new Tuner(this.engine, this.store);
     this.open = false;
     this.tuning = 0;
@@ -126,7 +128,9 @@ export default class Radio extends View {
     this.tuner.close();
     this.finishWarning(false);
     // Start receiver cleanup directly, bypassing pending prepare/controls.
-    await this.engine.close();
+    const closing = this.engine.close();
+    this.directory.close();
+    await closing;
     this.volume.release();
   }
 
@@ -187,7 +191,8 @@ export default class Radio extends View {
           .bg(this.tuner.key(s) === this.tuner.key(station) ? t.selected : t.popover)
           .hover(el => el.bg(t.hover)).on_click((_e, cx) => this.act("choose", cx, s))
           .child(`${s.name}${s.explicit ? " // Explicit content" : ""}`)))))
-      .child(div().text_size(10).text_color(t.dim).child("PLAY to power on. Select/next/prev tune while on."));
+      .child(div().text_size(10).text_color(t.dim).child("PLAY to power on. Select/next/prev tune while on."))
+      .child(this.directory.render(t));
   }
 
   render() {

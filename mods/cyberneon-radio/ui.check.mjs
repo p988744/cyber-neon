@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { Tuner, staticFrames } from "./tuner.js";
+import { RadioSearch, SEARCH_TAGS } from "./search.js";
+import { StationStore } from "./stations.js";
 let animations = true;
 class Element {
   constructor() {
@@ -18,9 +20,14 @@ const part = { new: () => new Element() };
 const host = {
   View: class {}, div: () => new Element(), h_flex: () => new Element(), v_flex: () => new Element(),
   Popover: part, Slider: part, SliderTrack: part, SliderIndicator: part, SliderThumb: part,
-  theme: () => ({}), shared: () => animations, staticFrames, Tuner,
+  Input: part, InputState: { new: () => ({ text: "", handlers: {}, on(event, fn) { this.handlers[event] = fn; }, value() { return this.text; }, set_value(text) { this.text = text; }, focus() {}, release() {} }) },
+  theme: () => ({}), shared: () => animations, staticFrames, Tuner, RadioSearch, SEARCH_TAGS,
+  localDirectory: () => ({ search: async () => [] }),
 };
 globalThis.__radioTest = host;
+const panelSource = (await readFile(new URL("search-ui.js", import.meta.url), "utf8")).replace(/^import .+;\n/gm, "");
+const { DirectoryPanel } = await import(`data:text/javascript;base64,${Buffer.from(`const {${Object.keys(host).join(",")}} = globalThis.__radioTest;\n` + panelSource).toString("base64")}`);
+host.DirectoryPanel = DirectoryPanel;
 let source = await readFile(new URL("main.js", import.meta.url), "utf8");
 source = source.replace(/^import .+;\n/gm, "");
 source = `const {${Object.keys(host).join(",")}} = globalThis.__radioTest;\n` + source;
@@ -30,7 +37,7 @@ const state = { source: null, title: "", error: null, status: "idle" };
 const engine = { snapshot: () => ({ ...state }) };
 const store = { snapshot: () => ({ stations, loading: false, error: null, path: "/fixture/stations.json" }) };
 const view = new Radio();
-Object.assign(view, { engine, store, tuner: new Tuner(engine, store), open: false, tuning: 0, volume: { value: () => 50 } });
+Object.assign(view, { engine, store, directory: new DirectoryPanel(store), tuner: new Tuner(engine, store), open: false, tuning: 0, volume: { value: () => 50 } });
 function all(root) {
   if (!root || typeof root !== "object") return [];
   return [root, ...root.items.flatMap(all), ...root.calls.filter(([name]) => ["content", "trigger"].includes(name)).flatMap(([, el]) => all(el))];
@@ -98,7 +105,7 @@ for (const command of ["next", "prev"]) {
     prepare: async station => ({ station, source: station.url }),
   };
   const radio = new Radio();
-  Object.assign(radio, { engine: actualEngine, store: actualStore, tuner: new Tuner(actualEngine, actualStore),
+  Object.assign(radio, { engine: actualEngine, store: actualStore, directory: new DirectoryPanel(actualStore), tuner: new Tuner(actualEngine, actualStore),
     open: false, dismissalGeneration: 0, warning: null, warningReady: null, warningGeneration: 0, tuning: 0, volume: { value: () => 50, release() {} } });
   radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
   const tasks = [];
@@ -178,7 +185,7 @@ for (const explicit of [true, false]) {
       prepare: async station => { enteredPrepare(); await gate; return { station, source: station.url }; },
     };
     const radio = new Radio();
-    Object.assign(radio, { engine, store, tuner: new Tuner(engine, store), open: false,
+    Object.assign(radio, { engine, store, directory: new DirectoryPanel(store), tuner: new Tuner(engine, store), open: false,
       dismissalGeneration: 0, warning: null, warningReady: null, warningGeneration: 0, tuning: 0,
       volume: { value: () => 50, release() {} } });
     radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
@@ -216,6 +223,45 @@ for (const explicit of [true, false]) {
       assert.equal(loads.at(-1), target.url);
     }
   }
+}
+// Actual View -> directory buttons -> shared station store -> Tuner list.
+// Neither Search nor Add may select/prepare/play, even with a receiver on.
+for (const on of [false, true]) {
+  let disk = JSON.stringify([cleanStation]);
+  let prepares = 0, plays = 0, searches = 0;
+  const store = new StationStore({ read: async () => disk,
+    save: async station => { disk = JSON.stringify([...JSON.parse(disk), station]); },
+    resolve: async url => { prepares++; return url; } });
+  await store.refresh();
+  const engine = { snapshot: () => ({ source: on ? cleanStation.url : null, status: on ? "playing" : "idle", title: "", error: null }),
+    play: async () => { plays++; } };
+  const radio = new Radio();
+  Object.assign(radio, { engine, store, tuner: new Tuner(engine, store), open: true, tuning: 0, volume: { value: () => 50 } });
+  radio.tuner.select(cleanStation);
+  if (on) radio.tuner.playing = cleanStation;
+  const selected = radio.tuner.selected;
+  radio.directory = new DirectoryPanel(store, { search: async tag => {
+    searches++; assert.equal(tag, "lofi");
+    return [{ name: "Directory fixture", url_resolved: "https://example.invalid/new", country: "Taiwan", codec: "MP3", bitrate: 128, lastcheckok: 1 }];
+  } });
+  const tasks = [];
+  const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); } };
+  const click = id => find(radio.render(), id).calls.find(([name]) => name === "on_click")[1]({}, cx);
+  assert.equal(searches, 0, "opening/rendering tuner never searches");
+  click("radio-directory-toggle");
+  assert.equal(searches, 0, "expanding directory never searches");
+  click("radio-tag-lofi");
+  await Promise.all(tasks);
+  assert.ok(contentTexts(radio.render()).includes("Directory fixture"));
+  assert.ok(contentTexts(radio.render()).includes("Taiwan · MP3 / 128 kbps"));
+  click("radio-add-0");
+  await Promise.all(tasks);
+  assert.equal(store.snapshot().stations.length, 2);
+  assert.equal(radio.tuner.stations()[1].name, "Directory fixture");
+  assert.ok(contentTexts(radio.render()).includes("SAVED"));
+  assert.equal(radio.tuner.selected, selected);
+  assert.equal(prepares, 0); assert.equal(plays, 0);
+  assert.equal(radio.tuner.on(), on);
 }
 delete globalThis.__radioTest;
 console.log("view controls, motion switch, status placement and layout keys passed");

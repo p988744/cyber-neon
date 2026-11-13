@@ -116,8 +116,9 @@ Protocol reference: [mpv JSON IPC and properties](https://mpv.io/manual/stable/#
 
 `station-storage.js` exports `localStations()`. It binds to **`${appHome()}/radio.json`**
 (the Herdr config folder, including `HERDR_APP_HOME` overrides), never the active
-space or a remote machine. No config file is created or overwritten: missing means
-`[]`. No stations or media ship. `radio.example.json` is an **inactive example**
+space or a remote machine. Reading never creates or overwrites config: missing means
+`[]`. Explicit directory Add (#9) can create/append it; see [SEARCH.md](SEARCH.md).
+No stations or media ship. `radio.example.json` is an **inactive example**
 pointing only to `~/Music`; copy/edit it as `radio.json` in your own config folder
 if desired. The list is a JSON array, for example:
 
@@ -162,8 +163,9 @@ unsubscribe(); // owner close hook; also start engine.close immediately as above
   not source preparation or engine decoding; the UI owns its Play pending state.
 - `StationStore` and `parseStations` in `stations.js` have no Herdr imports. The
   adapter contract is `{path, read(): Promise<string>, resolve(url): Promise<string|string[]>}`.
-  Read-only storage is intentional; #9 can add explicit save operations without
-  duplicating parsing. Optional `{name,open:"https://…"}` entries are preserved
+  The optional `save(station)` adapter supports explicit Add operations; the
+  owner's `store.save(station)` refreshes after persistence without tuning.
+  Optional `{name,open:"https://…"}` entries are preserved
   for #11; `prepare` rejects them so they cannot accidentally reach mpv. #11 owns
   browser launching. No browser is opened by this module.
 
