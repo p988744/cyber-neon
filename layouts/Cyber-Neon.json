@@ -210,13 +210,30 @@
         },
         {
           "id": "status",
-          "type": "block",
+          "type": "row",
           "size": {
             "px": 28
           },
-          "content": {
-            "mod": "cyberneon-status"
-          }
+          "resizable": false,
+          "children": [
+            {
+              "id": "status-readout",
+              "type": "block",
+              "content": {
+                "mod": "cyberneon-status"
+              }
+            },
+            {
+              "id": "radio",
+              "type": "block",
+              "size": {
+                "px": 196
+              },
+              "content": {
+                "mod": "cyberneon-radio"
+              }
+            }
+          ]
         }
       ]
     }
