@@ -5,7 +5,7 @@ Their licenses apply to those parts, and their notices are kept here as the lice
 
 | Part | Based on | License | Copyright |
 | --- | --- | --- | --- |
-| `mods/cyberneon-*/` except `cyberneon-jobs` and `cyberneon-graph` | the mods shipped with Herdr App 0.1.15 (`agents`, `workspace-chrome`, `files`, `menu`, `new-menu`, `pane`, `picker`, `spaces`, `workspace-status`, `tabs`, `toast`), each named in its `mod.json` `cloned_from`, then restyled and extended | Apache-2.0 | Herdr |
+| `mods/cyberneon-*/` except `cyberneon-jobs`, `cyberneon-graph` and `cyberneon-radio` | the mods shipped with Herdr App 0.1.15 (`agents`, `workspace-chrome`, `files`, `menu`, `new-menu`, `pane`, `picker`, `spaces`, `workspace-status`, `tabs`, `toast`), each named in its `mod.json` `cloned_from`, then restyled and extended | Apache-2.0 | Herdr |
 | `layouts/Cyber-Neon.json` | Herdr's `main` layout 0.1.15 (`cloned_from`) | Apache-2.0 | Herdr |
 | the `.svg` icons in `mods/cyberneon-chrome/`, `mods/cyberneon-pane/` and `mods/cyberneon-tabs/` (except `jobs.svg`) | shipped with the Herdr mods above; several are [Lucide](https://lucide.dev) icons | Apache-2.0 / ISC | Herdr; Lucide Contributors (portions Cole Bemis, Feather, MIT) |
 | `mods/cyberneon-chrome/fonts/Rajdhani-*.ttf` | [Rajdhani](https://fonts.google.com/specimen/Rajdhani), unchanged | SIL Open Font License 1.1 (`OFL-rajdhani.txt`) | Indian Type Foundry |
@@ -13,7 +13,22 @@ Their licenses apply to those parts, and their notices are kept here as the lice
 | `mods/cyberneon-chrome/fonts/ShareTechMono-Regular.ttf` | [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono), unchanged | SIL Open Font License 1.1 (`OFL-sharetechmono.txt`) | Carrois Apostrophe |
 | `themes/Cyber-Neon.json` terminal colors (`ansi`) | the "Cyberpunk Scarlet Protocol" scheme from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) | MIT | Mark Badolato and contributors |
 
-Everything else (`cyberneon-jobs`, `cyberneon-graph`, the map terrain, the hand-drawn `jobs.svg`, the theme's panel colors) is original to this project.
+Everything else (`cyberneon-jobs`, `cyberneon-graph`, `cyberneon-radio`, the map terrain, the hand-drawn `jobs.svg`, the theme's panel colors) is original to this project.
+
+## Radio music and external player
+
+No music or station list is bundled, and no music permission grant has been
+received for this project. There is therefore no bundled/permitted-music
+attribution entry. One More Lawn developer permission remains pending; the
+[official developer playlist](https://www.youtube.com/playlist?list=PLJ19oo9w4X5A)
+is documented only as a browser destination, not as licensed or bundled media.
+See [policy evidence and provenance](mods/cyberneon-radio/BROWSER.md#source-policy-evidence).
+If music is later included with permission, record its creator, source, exact
+license/consent and required notices here before distribution.
+
+[mpv](https://mpv.io/) is a separately installed external player; its binary is
+not bundled. This project's Apache-2.0 license grants no rights to user-selected
+streams, browser services or local recordings. See [Radio source terms](README.md#sources-and-permissions).
 
 ## Not affiliated
 

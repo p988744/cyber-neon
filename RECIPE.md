@@ -1,6 +1,6 @@
 # Cyber-Neon
 
-A black-and-red Herdr window in the style of a near-future game HUD. A 340px sidebar holds a glitching `CYBER//NEON` wordmark, a procedural city map where every space is a diamond on an island with a yellow tag, and an agents list with chips like `EXEC`, `INPUT REQ` and `COMPLETE`. Tabs and pane headers have 45° cut corners, thin red rules and cyan data bars. A JOBS journal on the right and a floating JOB card at the top right of the terminals track the current branch's pull request, milestone and assigned issues from GitHub. The status bar reads `NET//OK ▮ machine ▮ branch ▮ N AGENTS`. Cyan means active, yellow means look at this, and bright red is kept for an agent that needs you. All motion stops with one `ANIM OFF` switch.
+A black-and-red Herdr window in the style of a near-future game HUD. A 340px sidebar holds a glitching `CYBER//NEON` wordmark, a procedural city map where every space is a diamond on an island with a yellow tag, and an agents list with chips like `EXEC`, `INPUT REQ` and `COMPLETE`. Tabs and pane headers have 45° cut corners, thin red rules and cyan data bars. A JOBS journal on the right and a floating JOB card at the top right of the terminals track the current branch's pull request, milestone and assigned issues from GitHub. The 28px bottom status bar reads `NET//OK ▮ machine ▮ branch ▮ N AGENTS` with a `RADIO OFF` / station chip at its right end. Cyan means active, yellow means look at this, and bright red is kept for an agent that needs you. All motion stops with one `ANIM OFF` switch.
 
 ![Cyber-Neon](preview.png)
 
@@ -154,6 +154,10 @@ A stack, `panel-body`, with three pages switched by the tab bar's toggles: **Fil
 
 ### Status bar (28px, `chrome`, 1px `border` top)
 
+The `status` row holds `status-readout` plus the 196px RADIO chip at the far
+right. The following segments belong to `status-readout` (`cyberneon-status`);
+the chip and tuner are described under Radio below.
+
 Share Tech Mono 11px `muted`, segments split by `▮` in `border`, 10px gaps:
 - Left: a `NET//OK` tag, `accent` fill with a 9px top-left cut, Chakra Petch Bold, `accent_foreground` text.
 - The machine (a monitor icon and `This computer`, or a server icon and the remote name), the branch (only when the active space has one), `N AGENTS` in `foreground`, then one 6×6 square and a count for each state with any agents (working, blocked, done filled in their color; idle a hollow 1px square; the blocked count in red).
@@ -188,6 +192,44 @@ Elsewhere:
 - **Toast:** The tag is picked from the text first: "needs you / needs input / waiting / approval / permission / blocked" → red `INPUT REQUIRED`; "finished / done / complete" → yellow `TASK COMPLETE`. Only when neither matches does `level` decide (`success`, `warning`, `error` → `ERROR`), else `NOTICE`. Click runs the toast's action (usually going to the agent) and dismisses it. With animations on, it slides in from the right over 180ms (ease-out), dips to 30% opacity at 200ms and comes back at 260ms (a 40ms flicker), then holds.
 - **Scan card:** STATUS shows the state word in its color, and THREAT rises with the state (below).
 
+### Radio (`cyberneon-radio`)
+
+The right work area's original **28px bottom status row** contains the existing
+`status-readout` and a fixed 196px `radio` block. The RADIO chip opens a native
+tuner popover within that same View; dismissing it keeps the player alive.
+There is no radio control in the sidebar footer. No stations or music ship.
+
+- Setup: [README Radio](README.md#radio) covers mpv, the config-folder `radio.json`,
+  an inactive own-Music-folder example and each source's permissions.
+- Off: selection and previous/next browse; PLAY loads the selection. On: selection
+  and previous/next tune immediately; OFF unloads it. Volume and mute apply locally.
+  Explicit stations show their warning before loading and keep an EXPLICIT marker.
+- FIND A STATION searches only on Search; ADD persists without tuning. Local
+  folders expand recursively in name order; local M3U/M3U8/PLS queues retain order.
+- Browser entries use OPEN, stop local audio, and hand off without mpv extraction.
+  The chip stays OFF; OPENED IN BROWSER is an acknowledgment, not playback status.
+  CLEAR dismisses the notice; browser audio/tabs remain outside radio control.
+- DUCK ON/OFF defaults on and is remembered. A newly observed blocked transition
+  reduces local gain to 20% for four seconds; overlapping transitions extend the
+  deadline. Reactive host observations continue while the tuner is hidden; existing
+  blocked agents at startup do not trigger it, and between-render transitions can
+  be missed. The slider retains user intent; disable requests restoration immediately.
+- ANIM OFF removes the scrolling track title and generated visual static, while
+  playback, metadata and ducking continue. No static audio is bundled/generated.
+- One layout owner holds the engine, station store, search, browser opener and gain
+  controller. Config refresh is every 2s; receiver heartbeat/metadata every 5s,
+  including while hidden. Ducking observes reactive `agents()` / `terminals()`,
+  with one-shot deadline/retry timers, never periodic host polling.
+- A lost receiver never restarts automatically; explicit PLAY can recover it once
+  on that click. Gain writes retry only while alive with capped 2s backoff; loss or
+  close cancels them. Stop/loss/EOF reset temporary gain before replay. Layout
+  removal/switch, mod reload and normal quit start immediate cleanup; the guardian
+  expires after 20s without heartbeat, so a stalled app may require PLAY again.
+
+Keep implementation contracts, checks and limits in [NOTES.md](mods/cyberneon-radio/NOTES.md),
+[UI.md](mods/cyberneon-radio/UI.md), [SEARCH.md](mods/cyberneon-radio/SEARCH.md) and
+[BROWSER.md](mods/cyberneon-radio/BROWSER.md). There is no shared-state radio RPC.
+
 ### Scan card (hover an agent)
 
 Rest the pointer on a row of the wide agents list for 400ms. A card opens just right of the sidebar at the row's height, so it never covers a row. It closes when the pointer leaves the row. The rail never opens it.
@@ -210,7 +252,7 @@ Hover a space's point for 300ms and a card opens at its right. It stays open whi
 - **Pane header:** click to focus; hover for split / zoom / close.
 - **Brand:** the search button opens Herdr's own `picker`; the fold button narrows the sidebar to the rail (76px on macOS, 44px elsewhere) and back to the width it had.
 - **Footer:** Settings → `app.settings`; Add machine → `mod.open machine-add`; the ANIM chip flips every animation in the layout.
-- **Keys:** this layout adds one binding, `cmd-p` → `mod.open:cyberneon-picker`, in the `layout:Cyber-Neon` section. In the picker: type to filter, ↑/↓ and Enter to go, `ctrl+d` closes the selected tab, Esc leaves. Quiet spaces fold into an `earlier: N quiet spaces ▾` row. The last rows open a new tab, or a new space on this computer or on each connected machine. Everything else is Herdr's defaults, e.g. `cmd-w` → `tab.close`, `cmd-t` → `tab.new`, `cmd-shift-p` → the palette, `ctrl-shift-l` → switch layout.
+- **Keys:** this layout binds `cmd-p` → `mod.open:cyberneon-picker`, Ctrl-Shift-Right / Left → radio next / previous and Ctrl-Shift-M → radio mute, in the `layout:Cyber-Neon` section. In the picker: type to filter, ↑/↓ and Enter to go, `ctrl+d` closes the selected tab, Esc leaves. Quiet spaces fold into an `earlier: N quiet spaces ▾` row. The last rows open a new tab, or a new space on this computer or on each connected machine. Everything else is Herdr's defaults, e.g. `cmd-w` → `tab.close`, `cmd-t` → `tab.new`, `cmd-shift-p` → the palette, `ctrl-shift-l` → switch layout.
 
 ### JOBS: tracking work on GitHub
 
@@ -260,7 +302,15 @@ Stated plainly, because a shared layout should say this before anyone installs i
 - **`hc machine ls --json`** (picker, to list connected machines).
 - **`open <url>`** (jobs, only if `cx.open_url` is missing).
 
-Nothing writes to GitHub, and no mod reads files outside its own folder.
+- **`cyberneon-radio`:** local `python3` reads the config-folder `radio.json` and
+  user-selected audio folders/playlists. Explicit ADD writes that config. Search
+  contacts DNS-discovered Radio Browser servers; explicit PLAY starts local mpv
+  and contacts the chosen stream. OPEN uses local `open` / `xdg-open` for browser
+  pages. No media, station or service credentials ship; source terms still apply.
+
+The mods never write to GitHub. Radio reads user-selected local sources outside
+its mod folder; its helper/session files and config writes are described in
+[radio NOTES](mods/cyberneon-radio/NOTES.md).
 
 ### Layout tree (`layouts/Cyber-Neon.json`)
 
@@ -282,21 +332,28 @@ root           row · titlebar none · traffic_lights [12,16] · gradient #0a0b0
    │  │                floating: job-hud · cyberneon-jobs {role: "hud"} · edge top · align end
    │  └─ panel         column · 368px (280-900) · hidden false
    │     └─ panel-body stack · active "jobs"
-   │        ├─ files   block · files (shipped)
+   │        ├─ files   block · cyberneon-files
    │        ├─ changes block · changes (shipped)
-   │        └─ jobs    block · cyberneon-jobs {role: "journal"}
-   └─ status           block 28px · cyberneon-status
+   │        ├─ jobs    block · cyberneon-jobs {role: "journal"}
+   │        └─ graph   block · cyberneon-graph
+   └─ status           row 28px · resizable false
+      ├─ status-readout block · cyberneon-status
+      └─ radio          block 196px · cyberneon-radio (chip + tuner popover)
 ```
 
 Pane frame on `main`: `gap 8, radius 0, background "background", lone true, border {1, "border"}, focus {1, "working"}, header {content: {mod: "cyberneon-pane"}, height 30, position "top", reveal "always"}`.
 
 Root look keys: `theme "Cyber-Neon"`, `font "JetBrains Mono"`, `font_size 14`, `ui_font "Rajdhani"`, `toast "cyberneon-toast"`.
 
-`keys.json`: `{"layout:Cyber-Neon": {"cmd-p": "mod.open:cyberneon-picker"}}`.
+`keys.json` (all bindings are layout-only):
+
+```json
+{"layout:Cyber-Neon": {"cmd-p": "mod.open:cyberneon-picker", "ctrl-shift-right": "cyberneon-radio.next", "ctrl-shift-left": "cyberneon-radio.prev", "ctrl-shift-m": "cyberneon-radio.mute"}}
+```
 
 ### Mods
 
-Every mod is `place: "none"` (only the layout places it). All but `cyberneon-jobs` are clones of Herdr 0.1.15 mods (`cloned_from` in `mod.json`), restyled; their logic is kept unless noted. Every one reads the switch as `shared("cyberneon.animations") !== false` (unset = on).
+Every mod is `place: "none"` (only the layout places it). All but `cyberneon-jobs`, `cyberneon-graph` and `cyberneon-radio` are clones of Herdr 0.1.15 mods (`cloned_from` in `mod.json`), restyled; their logic is kept unless noted. Animated mods read the switch as `shared("cyberneon.animations") !== false` (unset = on).
 
 | Mod | Cloned from | Placed as | What it adds |
 |---|---|---|---|
@@ -304,20 +361,22 @@ Every mod is `place: "none"` (only the layout places it). All but `cyberneon-job
 | `cyberneon-spaces` | `spaces` | `spaces` | the map (replaces the list), legend, hover card, quest counts |
 | `cyberneon-agents` | `agents` | `agents`; also its own sort popup (`props.sortMenu`) | chips, sections, scan card, telemetry, THREAT |
 | `cyberneon-tabs` | `tabs` | `tabs` | cut chips, decode, Jobs toggle, per-space panel memory defaulting to Jobs |
+| `cyberneon-files` | `files` | `files` | rendered markdown with SOURCE / RENDER switch |
 | `cyberneon-pane` | `pane` | pane header | strip, notch, chip, data label, brackets, sweep |
 | `cyberneon-graph` | (new) | `graph` | git commit graph; lanes from `graph.js` `lanes()` (checked by `graph.check.mjs`) |
 | `cyberneon-jobs` | (new) | `job-hud` (`role: "hud"`), `jobs` (`role: "journal"`) | GitHub quest tracker; `title: "Jobs"` |
-| `cyberneon-status` | `workspace-status` | `status` | readout strip, clock |
+| `cyberneon-radio` | (new) | `radio` in the bottom `status` row | chip/tuner, local mpv, station config/search, browser handoff, attention ducking |
+| `cyberneon-status` | `workspace-status` | `status-readout` in the bottom `status` row | readout strip, clock |
 | `cyberneon-toast` | `toast` | root `toast` | in-game card; overlay 360×96 |
 | `cyberneon-picker` | `picker` | `cmd-p` | hacking-style picker; overlay popup, at top, offset 40, 640 wide, 0.8 tall, `frame: "none"` |
 | `cyberneon-menu` | `menu` | opened by tabs and spaces | context menu; overlay 200×260, `frame: "none"` |
 | `cyberneon-new-menu` | `new-menu` | opened by the tabs `+` | new tab/agent/space menu; overlay 250×512, `frame: "none"` |
 
-Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree` dialog, `machine-add` and `picker` opened from menus and the brand. Shipped icon files are referenced by path: `mods/workspace-chrome/*.svg` (status, agents, spaces, menus), `mods/pane/close.svg` (tabs), `mods/files/file.svg`, `mods/changes/changes.svg`, `icons/shell.svg`.
+Shipped mods used as-is: `changes` (panel page), plus the `worktree` dialog, `machine-add` and `picker` opened from menus and the brand. Shipped icon files are referenced by path: `mods/workspace-chrome/*.svg` (status, agents, spaces, menus), `mods/pane/close.svg` (tabs), `mods/files/file.svg`, `mods/changes/changes.svg`, `icons/shell.svg`.
 
 ### `herdr` functions and commands
 
-- Reads: `spaces()`, `panes()`, `agents()`, `terminals()` (for `created_ms`, `turn`, `parent`, `state`), `machines()`, `focused()`, `layout()`, `theme()`, `props()`, `shared()`, `settings()`, `keys()`, `window()`, `home()`, `updates()`, `knownAgents()`.
+- Reads: `spaces()`, `panes()`, `agents()`, `terminals()` (for `created_ms`, `turn`, `parent`, `state`), `machines()`, `focused()`, `layout()`, `theme()`, `props()`, `shared()`, `settings()`, `keys()`, `window()`, `home()`, `appHome()` (radio config root), `updates()`, `knownAgents()`.
 - Writes and calls: `setShared`, `setAgentOrder`, `run`, `openOverlay`, `closeOverlay`, `exec`, `hc`.
 - Commands: `space.select`, `space.new`, `tab.select`, `tab.new`, `tab.close`, `tab.rename`, `tab.move`, `tab.next`, `tab.prev`, `pane.focus`, `pane.split`, `pane.zoom`, `pane.close`, `agent.focus`, `terminal.pin`, `terminal.peek`, `layout.select`, `layout.show`, `layout.hide`, `layout.resize`, `app.settings`, `app.palette`, `mod.open`, `window.minimize`, `window.maximize`, `window.close`.
 
@@ -328,7 +387,7 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 - Per repo `<owner/repo>`: `cyberneon.jobs.cache.*` (`{at, branch, milestone, pr, issues, milestones, milestoneIssues}` or `{…, error}`), `cyberneon.jobs.milestone.*` (picked milestone number), `cyberneon.jobs.tracked.*` (`{kind, number}`, `null` = untracked, unset = the PR), `cyberneon.jobs.selected.*`, `cyberneon.jobs.body.<repo>#<n>` (`{at, body[, error]}`, plus a 30s loading marker), `cyberneon.map.quests.*` (`{at, issues, milestones}` or `{at, error}`).
 - Locks: `cyberneon.jobs.fetching` (`{repo, at}`, ignored after 90s), `cyberneon.map.quests.fetching` (ignored after 60s).
 - Herdr's own: `agents.sort`, `sidebar.width`, `sidebar.collapsed`, `workspace.panels`, `space.colors` (the picker keeps it).
-- Per copy `localStorage`: tabs `panels.v2` (panel choice per space id), journal `closed` (folded sections).
+- Per copy `localStorage`: tabs `panels.v2` (panel choice per space id), journal `closed` (folded sections), radio `ducking` (`"on"` / `"off"`, defaults on). Radio station config is the separate `appHome()/radio.json`; engine status is `idle | loading | playing | paused | unavailable | error | closed`, local to the owner, not a shared key.
 
 ### Pure helpers, each with a node check
 
@@ -430,7 +489,7 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 
 ## Done when
 
-1. `herdr-app check` passes for each of the 11 `cyberneon-*` mods, and `herdr-app do layout.switch '{"name":"Cyber-Neon"}'` shows the window with no `*.error` and no "could not be re-rendered" banner.
+1. `herdr-app check` passes for each installed `cyberneon-*` mod, and `herdr-app do layout.switch '{"name":"Cyber-Neon"}'` shows the window with no `*.error` and no "could not be re-rendered" banner.
 2. After switching away and back once, the wordmark reads `CYBER//NEON` in Rajdhani, the tabs in Chakra Petch and the status bar in Share Tech Mono.
 3. The sidebar is 340px: a 46px brand with the 4px yellow striped band at its bottom, the map, the agents list, a 69px footer with `ANIM ON`.
 4. With three spaces such as `atlas-site`, `api-docs` and `ledger`, the map draws one island with three diamonds, three yellow `01 ATLAS-SITE`-style tags on leaders, and a legend `01 — api-docs`, `02 — atlas-site`, `03 — ledger`. Reloading the mod draws the same island. The active space has the red ring and corner brackets.
@@ -445,3 +504,9 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 13. Clicking `ANIM ON` turns it to `ANIM OFF`: the glitch stops, bars freeze, blinks stop, and new tabs appear without decoding. Clicking again restores motion.
 14. `node mods/cyberneon-agents/telemetry.check.mjs`, `node mods/cyberneon-spaces/districts.check.mjs` and `node mods/cyberneon-jobs/rules.check.mjs` each pass.
 15. The tab bar's fourth panel button opens GRAPH. In a repo with a merge, two lanes join at 45°, HEAD has a ring and its branch chip, and `node mods/cyberneon-graph/graph.check.mjs` passes.
+16. With no radio.json, the bottom status chip reads RADIO OFF and nothing plays.
+    With a user-owned Music folder configured, PLAY, station navigation, volume,
+    mute and OFF work; explicit warnings precede loads. Browser OPEN stops local
+    audio and leaves the chip OFF. DUCK ON/OFF and ANIM OFF behave as documented
+    above. See the radio docs for isolated checks and the live/audible validation
+    limits; documentation work alone does not establish those live results.

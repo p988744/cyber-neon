@@ -1,11 +1,19 @@
 # cyberneon-radio — engine, stations and tuner
 
-No stations or music ship in M2. No source is loaded at startup. The layout places
+No stations or music ship. No source is loaded at startup. The layout places
 one `main.js` View in the right work area's 28px bottom status bar. Its RADIO chip
 opens a tuner in a native popover, retaining that same owner and receiver when
 dismissed. `mod.json` uses `place: none`, so installing it alone starts nothing.
 See [UI.md](UI.md) for controls, layout-only keys, UI state/extension seams,
-ANIM OFF behavior and UI checks. The #8 station/source API is documented below.
+ANIM OFF behavior and UI checks. The final station/source API is documented below.
+
+For installation (`brew install mpv`), the config path, an inactive own-Music-folder
+example and everyday controls, start with [README Radio](../../README.md#radio).
+[Source terms](../../README.md#sources-and-permissions) and [BROWSER.md](BROWSER.md)
+cover directory-only discovery, browser-only services and Creative Commons
+attribution. No developer permission for One More Lawn has been received, no
+music is bundled, and no music license grant is recorded in
+[THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md#radio-music-and-external-player).
 
 ## Reusable interface
 
@@ -46,8 +54,8 @@ the player. Startup failures and missing mpv can also be retried by playing agai
 The owner must call `poll()` while hidden too and **start** `engine.close()`
 directly in its `async close()` hook. Keep one owner in a **layout-owned block**;
 a terminal pane's lifetime can span layouts. A station list should update this
-engine, not create another owner. Mods cannot import one another: #8/#10 should
-add their files here. No shared-state RPC or arbitrary mpv command API is exposed.
+engine, not create another owner. Mods cannot import one another: keep radio components
+in this mod folder. No shared-state RPC or arbitrary mpv command API is exposed.
 
 ## Local process and dependencies
 
@@ -63,8 +71,8 @@ add their files here. No shared-state RPC or arbitrary mpv command API is expose
   external website extraction. Stop keeps mpv idle; later play reuses the PID
   while that receiver remains alive. A dead receiver is replaced only on Play.
 - Direct URLs/files are passed as JSON strings, never shell commands. Caller
-  decides which sources are allowed; restricted services remain browser-only
-  in later issues. Playback requests contact only the caller-selected source.
+  decides which sources are allowed; restricted services remain browser-only.
+  Playback requests contact only the caller-selected source.
 - The owner has a random 128-bit session token and a mode-0700 `/tmp/cnr-<token>`
   directory per generation (short enough for macOS socket paths). A replacement
   first cancels the old token; its fresh token is published before startup, so
@@ -126,7 +134,7 @@ if desired. The list is a JSON array, for example:
 [{ "name": "My music", "url": "~/Music", "genre": "My collection", "note": "My files", "explicit": true }]
 ```
 
-The UI owner (#10) consumes this API; #8 changes no View, layout or keys:
+The layout-owned UI consumes this API:
 
 ```js
 import { localStations } from "./station-storage.js";
