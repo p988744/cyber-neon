@@ -41,6 +41,9 @@ herdr-app do layout.switch '{"name":"Cyber-Neon"}'
 - `git` in your spaces' folders: read-only to find branches and remotes, and `git log` / `git show --stat` for the GRAPH page. The only writes come from your clicks on **▶ LAUNCH** or **▶ DISPATCH**: `git worktree add` (making the `milestone-…` or `issue-…` branch if it doesn't exist yet), local only.
 - `gh` with your own login, **read-only**, only for folders whose remote is on github.com. It calls `pr view`, `pr list`, `issue list`, `issue view` and `api …/milestones`, plus one GraphQL count of open issues and milestones per repo, at most every 2 to 10 minutes. The panel itself never writes to GitHub.
 - `hc read <terminal>` once when you open an agent's scan card, to read its status line (context and usage). `hc run` / `hc send` and Herdr's `space.new`, `tab.new` and `terminal.keep` when you click LAUNCH or DISPATCH.
+- The optional `cyberneon-radio` playback foundation uses local `mpv` and `python3`
+  (macOS/Linux) only after play is requested. It is not placed in the layout yet;
+  no stations or music ship. See its notes for the engine interface and cleanup.
 
 The panel sends nothing anywhere. The agents you start are a different matter: they run with your tools and logins, and talk to their own providers.
 
@@ -55,6 +58,8 @@ The panel sends nothing anywhere. The agents you start are a different matter: t
 - `RECIPE.md`: the full brief (what you see, how it behaves, how it's built, gotchas). It's also how to rebuild it from scratch.
 - `docs/DESIGN.md`: the early design notes (in Traditional Chinese).
 - Each `mods/cyberneon-*/NOTES.md`: per-mod details and pitfalls.
+- [`mods/cyberneon-radio/NOTES.md`](mods/cyberneon-radio/NOTES.md): reusable radio
+  engine for the upcoming station list and UI, dependencies, lifecycle and checks.
 
 ## License
 
