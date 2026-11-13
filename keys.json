@@ -1,5 +1,8 @@
 {
   "layout:Cyber-Neon": {
-    "cmd-p": "mod.open:cyberneon-picker"
+    "cmd-p": "mod.open:cyberneon-picker",
+    "ctrl-shift-right": "cyberneon-radio.next",
+    "ctrl-shift-left": "cyberneon-radio.prev",
+    "ctrl-shift-m": "cyberneon-radio.mute"
   }
 }

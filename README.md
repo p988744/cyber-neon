@@ -22,6 +22,10 @@ Version 0.4.2 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan w
 - **Files**: markdown files open rendered, with a **SOURCE / RENDER** switch in the preview's header.
 - **Everything restyled**: tabs, pane headers, menus, a hacking-style `cmd-p` picker, in-game style notifications and a status readout. Blocked agents are impossible to miss.
 - **`ANIM ON/OFF`** in the sidebar footer turns every animation off.
+- **Radio**: a `RADIO OFF` / station chip in the right work area's bottom
+  status bar opens the tuner. Select a station, press PLAY, tune with previous /
+  next, adjust volume or mute, and power off. Track titles scroll; tuning gets
+  a short generated visual static effect. Both stop with ANIM OFF.
 
 ## Install
 
@@ -32,7 +36,10 @@ cp layouts/Cyber-Neon.json $H/layouts/ && cp themes/Cyber-Neon.json $H/themes/ &
 herdr-app do layout.switch '{"name":"Cyber-Neon"}'
 ```
 
-- Merge `keys.json` into `~/.config/herdr-app/keys.json`. Its `layout:Cyber-Neon` section makes `cmd-p` open the hacking-style picker in this layout only.
+- Merge `keys.json` into `~/.config/herdr-app/keys.json`. Its `layout:Cyber-Neon`
+  section binds `cmd-p` to the picker, `ctrl-shift-right` / `ctrl-shift-left`
+  to next / previous station, and `ctrl-shift-m` to mute. Radio keys apply only
+  in this layout. While off, next / previous browse without starting playback.
 - On a first install, switch to another layout and back once: Herdr loads the layout's fonts on the next look change.
 - To go back to your own layout, press `ctrl-shift-l`. Deleting the copied files removes it.
 
@@ -41,9 +48,10 @@ herdr-app do layout.switch '{"name":"Cyber-Neon"}'
 - `git` in your spaces' folders: read-only to find branches and remotes, and `git log` / `git show --stat` for the GRAPH page. The only writes come from your clicks on **▶ LAUNCH** or **▶ DISPATCH**: `git worktree add` (making the `milestone-…` or `issue-…` branch if it doesn't exist yet), local only.
 - `gh` with your own login, **read-only**, only for folders whose remote is on github.com. It calls `pr view`, `pr list`, `issue list`, `issue view` and `api …/milestones`, plus one GraphQL count of open issues and milestones per repo, at most every 2 to 10 minutes. The panel itself never writes to GitHub.
 - `hc read <terminal>` once when you open an agent's scan card, to read its status line (context and usage). `hc run` / `hc send` and Herdr's `space.new`, `tab.new` and `terminal.keep` when you click LAUNCH or DISPATCH.
-- The optional `cyberneon-radio` playback foundation uses local `mpv` and `python3`
-  (macOS/Linux) only after play is requested. It is not placed in the layout yet;
-  no stations or music ship. See its notes for the engine interface and cleanup.
+- `cyberneon-radio` uses local `mpv` and `python3` (macOS/Linux) only after play
+  is requested. No stations or music ship. The tuner reads your station list;
+  reloading that list never starts playback. See its notes for station setup,
+  the engine interface and cleanup.
 
 The panel sends nothing anywhere. The agents you start are a different matter: they run with your tools and logins, and talk to their own providers.
 
@@ -58,8 +66,8 @@ The panel sends nothing anywhere. The agents you start are a different matter: t
 - `RECIPE.md`: the full brief (what you see, how it behaves, how it's built, gotchas). It's also how to rebuild it from scratch.
 - `docs/DESIGN.md`: the early design notes (in Traditional Chinese).
 - Each `mods/cyberneon-*/NOTES.md`: per-mod details and pitfalls.
-- [`mods/cyberneon-radio/NOTES.md`](mods/cyberneon-radio/NOTES.md): reusable radio
-  engine for the upcoming station list and UI, dependencies, lifecycle and checks.
+- [`mods/cyberneon-radio/NOTES.md`](mods/cyberneon-radio/NOTES.md): radio engine,
+  station setup, tuner controls, dependencies, lifecycle and checks.
 
 ## License
 
