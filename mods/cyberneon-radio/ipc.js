@@ -2,9 +2,9 @@
 export function command(action, value, requestId = 1) {
   let args;
   switch (action) {
-    case "play":
+    case "play": case "append":
       if (typeof value !== "string" || !value.trim() || /[\x00-\x1f]/.test(value)) throw new Error("Expected a URL or file path");
-      args = ["loadfile", value, "replace"]; break;
+      args = ["loadfile", value, action === "append" ? "append" : "replace"]; break;
     case "pause": case "mute":
       if (typeof value !== "boolean") throw new Error(`Expected ${action} boolean`);
       args = ["set_property", action, value]; break;

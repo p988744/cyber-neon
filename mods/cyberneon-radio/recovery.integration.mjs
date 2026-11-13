@@ -54,7 +54,17 @@ try {
     return oldPid;
   }
 
+  const nextMedia = join(folder, "next.wav");
+  await writeFile(nextMedia, wav);
+  await engine.play([media, nextMedia]);
+  assert.equal(engine.snapshot().error, null);
+  await engine.pause(true);
+  const queue = await bridge.request(command("get", "playlist"));
+  assert.deepEqual(queue[0].data.map((entry) => entry.filename), [media, nextMedia]);
+  await bridge.request(JSON.stringify({ command: ["playlist-next", "force"], request_id: 1 }) + "\n");
+  assert.equal((await bridge.request(command("get", "path")))[0].data, nextMedia);
   await engine.play(media);
+  assert.equal((await bridge.request(command("get", "playlist")))[0].data.length, 1, "single play replaces queue");
   assert.equal(engine.snapshot().status, "loading");
   await engine.volume(23); await engine.mute(true);
   const firstPid = await pid();

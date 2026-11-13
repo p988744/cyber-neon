@@ -105,3 +105,112 @@ use the same `View.close` hook; the integration check calls bridge close directl
 and does not quit/switch the person's running Herdr window.
 
 Protocol reference: [mpv JSON IPC and properties](https://mpv.io/manual/stable/#json-ipc).
+
+## Station list and source API (#8)
+
+`station-storage.js` exports `localStations()`. It binds to **`${appHome()}/radio.json`**
+(the Herdr config folder, including `HERDR_APP_HOME` overrides), never the active
+space or a remote machine. No config file is created or overwritten: missing means
+`[]`. No stations or media ship. `radio.example.json` is an **inactive example**
+pointing only to `~/Music`; copy/edit it as `radio.json` in your own config folder
+if desired. The list is a JSON array, for example:
+
+```json
+[{ "name": "My music", "url": "~/Music", "genre": "My collection", "note": "My files", "explicit": true }]
+```
+
+The UI owner (#10) consumes this API; #8 changes no View, layout or keys:
+
+```js
+import { localStations } from "./station-storage.js";
+const stations = localStations(); // independent data object; starts no process
+const unsubscribe = stations.subscribe(snapshot => { /* notify owner */ });
+await stations.refresh(); // call at init and every 2s, including while hidden
+stations.snapshot(); // {stations, loading, error, path}; detached copy
+// Only on an explicit Play/tune action; catch errors and display in UI:
+const prepared = await stations.prepare(stations.snapshot().stations[0]);
+await engine.play(prepared.source); // uses the existing layout-owned engine
+unsubscribe(); // owner close hook; also start engine.close immediately as above
+```
+
+- `subscribe(fn)` returns an unsubscribe function; notifications include a detached
+  snapshot, on loading and completion (no immediate initial callback). There is no
+  internal timer, watch loop or receiver. `refresh()` coalesces concurrent calls,
+  always reads the current file and resolves to a snapshot. It never plays anything.
+  Invalid JSON/schema/read errors retain the last good list and set `error`; fixing
+  the file clears it. Deleting the file clears the list. `loading` becomes true
+  when refresh work starts and false on completion. The owner should ignore late
+  callbacks after disposal and unsubscribe before closing.
+- `stations` entries retain `{name,url,genre?,note?,explicit}` and other extension
+  fields. `explicit` defaults to false. The derived `contentWarning` is exactly
+  `"Explicit content"` for true, otherwise null. **The UI must display this warning
+  with the station before playback and with the selected station**; it must not
+  infer content rating from the current track. Original note/genre remain available.
+- `prepare(station)` validates that supplied station, resolves its source afresh and
+  returns `{station, source}` with normalized warning metadata. It does not require
+  membership in the saved list, so #9 can prepare a newly added/search result. It
+  never starts playback, saves edits, changes selection, or mutates a snapshot.
+  It **rejects** (throws Error) on unsupported/missing/empty/cyclic sources and
+  browser-only stations. The UI must catch this for its error readout. `refresh`
+  errors instead appear in its snapshot. Loading here refers to config refresh,
+  not source preparation or engine decoding; the UI owns its Play pending state.
+- `StationStore` and `parseStations` in `stations.js` have no Herdr imports. The
+  adapter contract is `{path, read(): Promise<string>, resolve(url): Promise<string|string[]>}`.
+  Read-only storage is intentional; #9 can add explicit save operations without
+  duplicating parsing. Optional `{name,open:"https://…"}` entries are preserved
+  for #11; `prepare` rejects them so they cannot accidentally reach mpv. #11 owns
+  browser launching. No browser is opened by this module.
+
+Source handling is local Python stdlib via argument arrays, using the engine's
+existing python3 dependency. Sources support direct `http`, `https`, `icy`, `rtsp`,
+`rtmp`, `rtmps` URLs; absolute paths, config-relative paths, `~/` and local `file://`
+URLs. Local audio extensions: mp3, flac, wav, ogg, opus, m4a, aac, aiff/aif, alac,
+wma, ape, webm, mka (actual decoding depends on mpv). Folders expand recursively in
+name order, audio files only; symlink children and non-audio files are skipped.
+A directly selected symlink to an audio file/folder resolves normally.
+Local `.m3u`/`.m3u8` support UTF-8/BOM, comments and relative entries; `.pls` uses
+`[playlist]` and numerical `FileN` ordering. Nested local playlists are flattened;
+paths in them are relative to that playlist. Duplicates/order are preserved.
+Empty folders/playlists fail, and one bad entry rejects the whole preparation.
+No playlist titles override station metadata or the engine's now-playing title.
+
+Remote playlist URLs are passed to mpv, which owns fetching/format support; this
+module performs **no network requests** or remote playlist expansion. Known
+YouTube, SoundCloud, Poolsuite, SomaFM, Spotify and Apple Music hosts (including
+subdomains) are rejected for in-app playback, including local playlist entries.
+This is a source guard, not a network sandbox: redirects/contents of remote
+playlists are not inspected. #11 owns browser-only presentation and policy.
+No provider, endpoint or music is preconfigured in the shipped list or example.
+
+Bounds: radio.json and each local playlist at most 1 MiB UTF-8; at most 1000
+stations/tracks, 5000 visited source entries, 5000 children per folder, nesting 16.
+Errors are surfaced instead of silent truncation. Local helper timeout is 5s.
+Windows source handling is not implemented (matching the engine's macOS/Linux
+scope). Invalid protocols and control characters cannot reach engine commands.
+
+### Ordered engine queues
+
+`engine.play(string)` remains compatible. `engine.play(string[])` copies and
+validates **all 1..1000 items before any receiver startup**. One serialized Play
+sends `loadfile(first, replace)` followed by `loadfile(item, append)` in array
+order and restores current volume/mute settings. A new Play replaces the entire
+old queue; mpv advances naturally, with no repeat or shuffle enabled here.
+`snapshot().source` is the first requested item (not the current queue position),
+while `title` follows current mpv ICY/media metadata on poll. Pause/resume, stop,
+receiver recovery and close retain the #7 lifecycle; a recovered explicit Play
+reloads only its newly requested queue, without resuming a stale queue. IPC load
+acknowledgments still mean loading, not verified decoding. A receiver error can
+leave a partially loaded queue; it surfaces via the existing engine error state.
+
+Additional checks (scratch config only, no user's config/network/media touched):
+
+```sh
+node mods/cyberneon-radio/stations.check.mjs
+```
+
+This covers refresh/coalescing/subscriptions, malformed edit recovery, detached
+snapshots, explicit metadata, missing config, safe path escaping, folder ordering,
+local M3U/PLS/nested playlists, cycles, bounds, restricted and unsupported sources.
+`ipc.check.mjs` additionally verifies array validation/copy/command ordering;
+`recovery.integration.mjs` verifies real mpv queue order, advancing and replacement
+with generated silence before its existing receiver lifecycle checks.

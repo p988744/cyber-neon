@@ -119,6 +119,24 @@ for (const detectedByPoll of [true, false]) {
   await engine.close();
 }
 
+// Arrays are copied and completely validated before any receiver is started.
+{
+  const bridge = fixture(), engine = new RadioEngine(bridge);
+  for (const sources of [[], ["/tmp/ok.wav", "bad\npath"], Array(1001).fill("/tmp/a.wav")]) {
+    assert.throws(() => engine.play(sources));
+  }
+  assert.deepEqual(bridge.calls, []);
+  const sources = ["/tmp/a.wav", "/tmp/b.wav"];
+  const pending = engine.play(sources);
+  sources[1] = "/tmp/mutated.wav";
+  await pending;
+  assert.deepEqual(bridge.calls.filter(Array.isArray).slice(0, 2), [
+    ["loadfile", "/tmp/a.wav", "replace"], ["loadfile", "/tmp/b.wav", "append"],
+  ]);
+  assert.equal(engine.snapshot().source, "/tmp/a.wav");
+  await engine.close();
+}
+
 // Exercise the actual bridge generation/cancellation logic with a gated exec.
 for (const blockAction of ["close", "start"]) {
   const calls = [];

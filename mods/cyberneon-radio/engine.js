@@ -39,7 +39,11 @@ export class RadioEngine {
   }
 
   play(source) {
-    const load = command("play", source); // validate before starting anything
+    // Copy and validate the complete queue before starting anything. mpv advances
+    // naturally; each explicit play replaces the old queue, without repeat/shuffle.
+    const sources = Array.isArray(source) ? [...source] : [source];
+    if (!sources.length || sources.length > 1000) throw new Error("Expected 1..1000 radio sources");
+    const load = sources.map((item, i) => command(i ? "append" : "play", item, i + 1)).join("");
     return this.enqueue(async () => {
       // Only an explicit Play may recover. Also handle expiry not yet seen by
       // poll, on this same click, with at most one replacement attempt.
@@ -56,13 +60,13 @@ export class RadioEngine {
           this.started = true;
         }
         try {
-          await this.request(load + command("pause", false, 2)
-            + command("volume", this.state.volume, 3) + command("mute", this.state.muted, 4));
+          await this.request(load + command("pause", false, sources.length + 1)
+            + command("volume", this.state.volume, sources.length + 2) + command("mute", this.state.muted, sources.length + 3));
         } catch (error) {
           if (error instanceof ReceiverGone && attempt === 0 && !this.closed) continue;
           throw error;
         }
-        if (!this.closed) this.state = { ...this.state, status: "loading", source, title: "", paused: false, error: null };
+        if (!this.closed) this.state = { ...this.state, status: "loading", source: sources[0], title: "", paused: false, error: null };
         return;
       }
     });
