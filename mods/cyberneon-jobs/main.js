@@ -268,6 +268,7 @@ export default class Jobs extends View {
         `   (<slug>: the title's ASCII words, lowercase, joined by dashes, at most 40 characters. The JOBS panel links an agent to its issue by that folder.)`,
         `5. Follow them with hc wait and hc read. Merge each finished issue branch into ${branch}. Start dependent issues only after what they need is merged.`,
         `6. When every issue is merged here: push ${branch} and open a PR to the default branch (gh pr create) whose body has one "Closes #<n>" line per issue, yours included. Don't close issues yourself: merging that PR closes them, and that's the person's call.`,
+        `7. End by telling the person, in your last message: merge the PR, then close milestone M${job.number} "${job.title}" (${job.url}). GitHub closes the issues but never the milestone. Don't close it yourself.`,
       ].join("\n");
       run("space.new", { folder: `${wt}/${branch}`, machine: on ?? "", tab: `M${job.number}`, argv, task });
       return "";
