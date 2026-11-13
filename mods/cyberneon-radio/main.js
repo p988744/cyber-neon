@@ -113,7 +113,10 @@ export default class Radio extends View {
       cx.timer.after(420, cx => { if (this.tuning === generation) { this.tuning = 0; cx.notify(); } });
     }
     cx.spawn(async (cx) => {
-      const beforePlay = station => this.presentWarning(station, cx, dismissalGeneration);
+      const beforePlay = async station => {
+        if (await this.presentWarning(station, cx, dismissalGeneration) === false) return false;
+        return () => dismissalGeneration === this.dismissalGeneration && !this.tuner.closed;
+      };
       const job = action === "next" ? this.tuner.step(1, beforePlay) : action === "prev" ? this.tuner.step(-1, beforePlay)
         : action === "choose" ? this.tuner.choose(value, beforePlay)
         : action === "power" ? this.tuner.power(beforePlay)

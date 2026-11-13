@@ -56,15 +56,20 @@ const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve()
   assert.equal(f.engine.started, true);
 }
 
-for (const ending of ["cancel", "close"]) {
+for (const ending of ["cancel", "close", "stale-token"]) {
   const f = fixture(); await f.tuner.power(); const before = f.calls.length;
   const warning = deferred();
   const action = f.tuner.choose(web, () => warning.promise);
   await flush();
   if (ending === "close") f.tuner.close();
-  warning.resolve(ending !== "cancel"); await action;
+  warning.resolve(ending === "stale-token" ? () => false : ending !== "cancel"); await action;
   assert.equal(f.calls.length, before, "cancelled/closed warning must not stop audio or open browser");
   assert.equal(f.tuner.browserOpened, null);
+}
+{
+  const f = fixture();
+  await f.tuner.power(() => () => false);
+  assert.deepEqual(f.calls, [], "an invalidated action token also cancels an ordinary in-app load");
 }
 
 // Closing while stop is pending prevents browser launch; closing during opener

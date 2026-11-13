@@ -136,6 +136,11 @@ choose and step. For browser stations it normalizes metadata, validates the URL,
 awaits that hook (including action-generation cancellation/native warning layout),
 then stops local playback before invoking the opener. A failed stop aborts the
 handoff. Opener failures appear in `tuner.error`; there is no mpv fallback.
+The View's hook returns a synchronous action-validity callback after warning
+layout. Browser handoff rechecks it immediately before the opener, after stop
+completes. Dismissing during stop leaves the receiver OFF without opening a
+browser, populating `browserOpened`, or resuming local audio. Hooks that return
+`false` still cancel; callers without a validity callback keep the existing API.
 
 `browserOpened` is a normalized station representing an acknowledged handoff,
 separate from `playing` and `engine.snapshot().source`. The chip stays OFF after

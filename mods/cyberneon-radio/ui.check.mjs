@@ -266,13 +266,15 @@ for (const on of [false, true]) {
 
 // Browser handoff uses the same native warning and dismissal-generation gate,
 // but must stop local audio rather than preparing/loading the browser station.
-for (const ending of ["shown", "dismissed", "queued-dismissal", "closed"]) {
+for (const ending of ["shown", "dismissed", "queued-dismissal", "closed", "stop-dismissed"]) {
   const browser = { name: "Explicit browser fixture", open: "https://example.invalid/", explicit: true };
   const current = { source: cleanStation.url, status: "playing", error: null };
   const effects = [];
+  let releaseStop;
+  const stopGate = ending === "stop-dismissed" ? new Promise(resolve => { releaseStop = resolve; }) : null;
   const engine = {
     snapshot: () => ({ ...current }),
-    stop: async () => { effects.push("stop"); current.source = null; },
+    stop: async () => { effects.push("stop"); if (stopGate) await stopGate; current.source = null; current.status = "idle"; },
     close: async () => { current.source = null; },
   };
   let entries = [cleanStation, browser];
@@ -303,6 +305,25 @@ for (const ending of ["shown", "dismissed", "queued-dismissal", "closed"]) {
   if (ending === "dismissed") radio.setOpen(false, cx);
   else if (ending === "closed") await radio.close();
   else warning.calls.find(([name]) => name === "on_size_change")[1]({ width: 200, height: 16 }, cx);
+  if (ending === "stop-dismissed") {
+    await flush();
+    assert.deepEqual(effects, ["stop"], "warning layout released the deferred stop, not the browser");
+    const generation = radio.dismissalGeneration;
+    radio.setOpen(false, cx);
+    assert.equal(radio.dismissalGeneration, generation + 1);
+    releaseStop(); await Promise.all(tasks);
+    assert.deepEqual(effects, ["stop"], "dismissal while stop waits must cancel browser launch");
+    assert.equal(current.source, null); assert.equal(current.status, "idle");
+    assert.equal(radio.tuner.on(), false); assert.equal(radio.tuner.playing, null);
+    assert.equal(radio.tuner.browserOpened, null); assert.equal(radio.tuner.error, null);
+    assert.equal(radio.open, false);
+    const tree = radio.render();
+    assert.ok(contentTexts(find(tree, "radio-chip")).includes("OFF"));
+    assert.ok(contentTexts(tree).includes("RECEIVER OFF"));
+    assert.equal(find(tree, "radio-browser-opened"), undefined);
+    assert.equal(find(tree, "radio-explicit"), undefined);
+    continue;
+  }
   await Promise.all(tasks);
   if (ending !== "shown") {
     assert.deepEqual(effects, []); assert.equal(radio.tuner.browserOpened, null);

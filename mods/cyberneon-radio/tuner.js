@@ -44,7 +44,8 @@ export class Tuner {
       if (!this.openBrowser) throw new Error("Browser-only station: browser opener unavailable");
       // Preserve the View's action-generation cancellation and explicit warning
       // gate before either stopping local audio or opening an external page.
-      if (beforePlay && await beforePlay(browser) === false) return;
+      const actionValid = beforePlay ? await beforePlay(browser) : undefined;
+      if (actionValid === false || (typeof actionValid === "function" && !actionValid())) return;
       if (this.closed) return;
       this.browserOpened = null;
       if (this.on()) {
@@ -54,7 +55,9 @@ export class Tuner {
         if (state.source || state.error) throw new Error(state.error || "Cannot stop local radio before browser handoff");
       }
       this.playing = null;
-      if (this.closed) return;
+      // Stop may yield long enough for the View to dismiss this action. The
+      // optional hook returns a synchronous validity check after warning layout.
+      if (this.closed || (typeof actionValid === "function" && !actionValid())) return;
       await this.openBrowser(url);
       if (!this.closed) this.browserOpened = browser;
       return;
@@ -62,7 +65,8 @@ export class Tuner {
     const prepared = await this.store.prepare(station);
     if (this.closed) return;
     // The View can present normalized station metadata before loading audio.
-    if (beforePlay && await beforePlay(prepared.station) === false) return;
+    const actionValid = beforePlay ? await beforePlay(prepared.station) : undefined;
+    if (actionValid === false || (typeof actionValid === "function" && !actionValid())) return;
     // Closing during playlist resolution must not start a receiver.
     if (this.closed) return;
     this.browserOpened = null;

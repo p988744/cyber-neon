@@ -20,6 +20,10 @@ Explicit power/choose/step actions still use its serialized queue. The browser
 branch validates normalized station metadata and awaits the existing final
 `beforePlay(station)` hook before stopping local audio or launching the browser.
 Dismissed actions and pending explicit warnings therefore cancel the handoff.
+After warning layout the View's hook returns an action-validity callback, checked
+again immediately before invoking the opener after any awaited receiver stop.
+Dismissal during stop leaves the completed stop intact (receiver OFF), with no
+browser launch, handoff notice or automatic resume.
 Stop failure aborts it; launch failure leaves the receiver off and sets
 `tuner.error`, with no playback fallback. Successful handoff stores the station
 in `browserOpened`, clears `playing`, and leaves engine source empty. Closing
