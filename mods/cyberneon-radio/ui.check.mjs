@@ -99,7 +99,7 @@ for (const command of ["next", "prev"]) {
   };
   const radio = new Radio();
   Object.assign(radio, { engine: actualEngine, store: actualStore, tuner: new Tuner(actualEngine, actualStore),
-    open: false, warning: null, warningReady: null, warningGeneration: 0, tuning: 0, volume: { value: () => 50, release() {} } });
+    open: false, dismissalGeneration: 0, warning: null, warningReady: null, warningGeneration: 0, tuning: 0, volume: { value: () => 50, release() {} } });
   radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
   const tasks = [];
   const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); }, timer: { after() {} } };
@@ -156,6 +156,66 @@ for (const command of ["next", "prev"]) {
   assert.deepEqual(loads, [], "stale layout callback cannot release a newer warning");
   await radio.close(); await Promise.all(tasks);
   assert.deepEqual(loads, []);
+}
+// Exact prepare/dismiss race: cancellation must be captured when the action
+// starts, before a warning exists, for both explicit and ordinary stations.
+for (const explicit of [true, false]) {
+  for (const ending of ["dismiss", "close"]) {
+    const target = { name: "Delayed fixture", url: "/delayed.wav", explicit };
+    const current = { source: cleanStation.url, status: "playing" };
+    const loads = [];
+    const engine = {
+      snapshot: () => ({ ...current }),
+      play: async source => { loads.push(source); Object.assign(current, { source, status: "loading" }); },
+      volume: async () => {}, mute: async () => {},
+      close: async () => { current.source = null; },
+    };
+    let releasePrepare, enteredPrepare;
+    const gate = new Promise(resolve => { releasePrepare = resolve; });
+    const entered = new Promise(resolve => { enteredPrepare = resolve; });
+    const store = {
+      snapshot: () => ({ stations: [cleanStation, target], loading: false }),
+      prepare: async station => { enteredPrepare(); await gate; return { station, source: station.url }; },
+    };
+    const radio = new Radio();
+    Object.assign(radio, { engine, store, tuner: new Tuner(engine, store), open: false,
+      dismissalGeneration: 0, warning: null, warningReady: null, warningGeneration: 0, tuning: 0,
+      volume: { value: () => 50, release() {} } });
+    radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
+    const tasks = [];
+    const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); }, timer: { after() {} } };
+    const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
+    radio.command("next", cx);
+    await entered;
+    assert.equal(radio.warningReady, null, "prepare still pending, no warning wait exists");
+    if (ending === "dismiss") radio.setOpen(false, cx);
+    else await radio.close();
+    releasePrepare(); await flush();
+    if (ending === "dismiss") {
+      assert.equal(radio.open, false, "late prepare must not reopen dismissed tuner");
+      assert.equal(current.source, cleanStation.url);
+    }
+    assert.equal(radio.warning, null);
+    assert.deepEqual(loads, [], "late prepare must not load a dismissed/closed action");
+    await Promise.all(tasks);
+    if (ending === "close") continue;
+
+    // Cancellation invalidates only old actions; repeated controls issued
+    // afterward still load, with an independent warning layout each time.
+    store.prepare = async station => ({ station, source: station.url });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      radio.act("choose", cx, target); await flush();
+      if (explicit) {
+        const warning = find(radio.render(), `radio-warning-${attempt + 1}`);
+        assert.ok(warning);
+        assert.equal(loads.length, attempt);
+        warning.calls.find(([name]) => name === "on_size_change")[1]({ width: 200, height: 16 }, cx);
+      }
+      await Promise.all(tasks);
+      assert.equal(loads.length, attempt + 1);
+      assert.equal(loads.at(-1), target.url);
+    }
+  }
 }
 delete globalThis.__radioTest;
 console.log("view controls, motion switch, status placement and layout keys passed");

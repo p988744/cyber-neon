@@ -61,6 +61,9 @@ source. No source is resolved or played on init, refresh or tuner open.
   owner close also releases the wait without playing. This path works with ANIM
   OFF. The collapsed chip retains a fixed `EXPLICIT` marker beside the actual
   playing station and `Explicit content` in its tooltip, even after list removal.
+  Each action captures the dismissal generation before preparation begins;
+  dismiss/close invalidates it. The post-prepare hook checks that generation
+  before reopening/presenting or loading, for both explicit and ordinary stations.
 - Empty/loading lists have explicit readouts. Store/prepare/engine errors appear
   in the tuner, including `NO RECEIVER // install mpv`. The store retains its last
   good list on malformed JSON. Browser-only entries surface prepare's error;

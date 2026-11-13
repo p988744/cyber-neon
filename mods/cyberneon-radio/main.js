@@ -20,6 +20,7 @@ export default class Radio extends View {
     this.tuning = 0;
     this.tuneGeneration = 0;
     this.warningGeneration = 0;
+    this.dismissalGeneration = 0;
     this.warning = null;
     this.warningReady = null;
     this.polling = false;
@@ -55,7 +56,10 @@ export default class Radio extends View {
 
   setOpen(open, cx) {
     this.open = open;
-    if (!open) this.finishWarning(false);
+    if (!open) {
+      this.dismissalGeneration++;
+      this.finishWarning(false);
+    }
     cx.notify();
   }
 
@@ -65,8 +69,11 @@ export default class Radio extends View {
     if (ready) ready(shown);
   }
 
-  async presentWarning(station, cx) {
-    if (!station.explicit || this.tuner.closed) return;
+  async presentWarning(station, cx, dismissalGeneration) {
+    // This action's generation was captured before prepare. Dismissal while
+    // resolving a source must cancel ordinary loads as well as warning waits.
+    if (dismissalGeneration !== this.dismissalGeneration || this.tuner.closed) return false;
+    if (!station.explicit) return;
     this.open = true;
     this.warning = { station, generation: ++this.warningGeneration };
     const shown = new Promise(resolve => { this.warningReady = resolve; });
@@ -75,7 +82,7 @@ export default class Radio extends View {
     // or fixed sleep alone cannot ensure the panel was presented before Play.
     const visible = await shown;
     this.warning = null;
-    return visible;
+    return visible && dismissalGeneration === this.dismissalGeneration && !this.tuner.closed;
   }
 
   refresh(cx) {
@@ -94,6 +101,7 @@ export default class Radio extends View {
   }
 
   act(action, cx, value) {
+    const dismissalGeneration = this.dismissalGeneration;
     const visual = (action === "power" && !this.tuner.on() && this.tuner.station())
       || (["next", "prev", "choose"].includes(action) && this.tuner.on() && this.tuner.stations().length);
     if (visual && anim()) {
@@ -102,7 +110,7 @@ export default class Radio extends View {
       cx.timer.after(420, cx => { if (this.tuning === generation) { this.tuning = 0; cx.notify(); } });
     }
     cx.spawn(async (cx) => {
-      const beforePlay = station => this.presentWarning(station, cx);
+      const beforePlay = station => this.presentWarning(station, cx, dismissalGeneration);
       const job = action === "next" ? this.tuner.step(1, beforePlay) : action === "prev" ? this.tuner.step(-1, beforePlay)
         : action === "choose" ? this.tuner.choose(value, beforePlay)
         : action === "power" ? this.tuner.power(beforePlay)
@@ -114,6 +122,7 @@ export default class Radio extends View {
   }
 
   async close() {
+    this.dismissalGeneration++;
     this.tuner.close();
     this.finishWarning(false);
     // Start receiver cleanup directly, bypassing pending prepare/controls.
