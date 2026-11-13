@@ -16,6 +16,10 @@ import time
 LEASE_SECONDS = 20
 
 
+class ReceiverGone(RuntimeError):
+    """Exit code 3: this session cannot accept further playback commands."""
+
+
 def directory(token):
     if os.name != "posix":
         raise RuntimeError("RECEIVER // Unix sockets require macOS or Linux")
@@ -34,7 +38,7 @@ def prepare(root):
 
 def touch(root):
     if (root / "closed").exists():
-        raise RuntimeError("Receiver closed")
+        raise ReceiverGone("Receiver closed")
     (root / "lease").touch()
 
 
@@ -106,6 +110,13 @@ def start(root):
 
 
 def request(root, payload):
+    try:
+        exchange(root, payload)
+    except (FileNotFoundError, ConnectionRefusedError, ConnectionResetError, BrokenPipeError) as error:
+        raise ReceiverGone("Receiver disconnected") from error
+
+
+def exchange(root, payload):
     touch(root)
     messages = [json.loads(line) for line in payload.splitlines() if line.strip()]
     pending = {m["request_id"] for m in messages}
@@ -117,7 +128,7 @@ def request(root, payload):
             while pending:
                 line = stream.readline()
                 if not line:
-                    raise RuntimeError("mpv IPC disconnected")
+                    raise ReceiverGone("mpv IPC disconnected")
                 message = json.loads(line)
                 if message.get("request_id") in pending:
                     pending.remove(message["request_id"])
@@ -151,6 +162,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except ReceiverGone as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(3)
     except Exception as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)

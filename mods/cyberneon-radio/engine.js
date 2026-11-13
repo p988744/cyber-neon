@@ -1,4 +1,5 @@
 import { command, nowPlaying } from "./ipc.js";
+import { ReceiverGone } from "./receiver-client.js";
 
 export const NO_RECEIVER = "NO RECEIVER // install mpv";
 
@@ -14,6 +15,16 @@ export class RadioEngine {
   }
 
   snapshot() { return { ...this.state }; }
+  async request(payload, allowUnavailable = false) {
+    try { return await this.bridge.request(payload, allowUnavailable); }
+    catch (error) {
+      if (error instanceof ReceiverGone && !this.closed) {
+        this.started = false;
+        this.state = { ...this.state, source: null, title: "", paused: false };
+      }
+      throw error;
+    }
+  }
   enqueue(work) {
     const job = this.tail.then(async () => {
       if (this.closed) return this.snapshot();
@@ -30,20 +41,30 @@ export class RadioEngine {
   play(source) {
     const load = command("play", source); // validate before starting anything
     return this.enqueue(async () => {
-      if (!this.started) {
-        if (!await this.bridge.available()) {
-          this.state = { ...this.state, status: "unavailable", error: NO_RECEIVER };
-          return;
+      // Only an explicit Play may recover. Also handle expiry not yet seen by
+      // poll, on this same click, with at most one replacement attempt.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (!this.started) {
+          if (!await this.bridge.available()) {
+            this.state = { ...this.state, status: "unavailable", error: NO_RECEIVER };
+            return;
+          }
+          if (this.closed) return;
+          this.attempted = true; // close must bypass the queue, including a pending start
+          await this.bridge.start();
+          if (this.closed) return;
+          this.started = true;
         }
-        if (this.closed) return;
-        this.attempted = true; // close must bypass the queue, including a pending start
-        await this.bridge.start();
-        if (this.closed) return;
-        this.started = true;
+        try {
+          await this.request(load + command("pause", false, 2)
+            + command("volume", this.state.volume, 3) + command("mute", this.state.muted, 4));
+        } catch (error) {
+          if (error instanceof ReceiverGone && attempt === 0 && !this.closed) continue;
+          throw error;
+        }
+        if (!this.closed) this.state = { ...this.state, status: "loading", source, title: "", paused: false, error: null };
+        return;
       }
-      await this.bridge.request(load + command("pause", false, 2)
-        + command("volume", this.state.volume, 3) + command("mute", this.state.muted, 4));
-      if (!this.closed) this.state = { ...this.state, status: "loading", source, title: "", paused: false, error: null };
     });
   }
 
@@ -51,7 +72,7 @@ export class RadioEngine {
     const message = command(action, value);
     return this.enqueue(async () => {
       if (!this.started) return; // controls never start mpv
-      await this.bridge.request(message);
+      await this.request(message);
       if (this.closed) return;
       if (action === "stop") this.state = { ...this.state, status: "idle", source: null, title: "", paused: false, error: null };
       if (action === "pause") this.state = { ...this.state, paused: value,
@@ -70,7 +91,7 @@ export class RadioEngine {
     return this.enqueue(async () => {
       if (!this.started) return;
       const props = ["metadata", "media-title", "idle-active", "pause", "volume", "mute"];
-      const replies = await this.bridge.request(props.map((p, i) => command("get", p, i + 1)).join(""), true);
+      const replies = await this.request(props.map((p, i) => command("get", p, i + 1)).join(""), true);
       if (this.closed) return;
       const data = Object.fromEntries(replies.filter((r) => r.error === "success").map((r) => [props[r.request_id - 1], r.data]));
       const idle = data["idle-active"] === true;

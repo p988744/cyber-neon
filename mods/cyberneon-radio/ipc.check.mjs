@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { command, nowPlaying, parseReplies } from "./ipc.js";
 import { RadioEngine, NO_RECEIVER } from "./engine.js";
+import { receiverClient, ReceiverGone } from "./receiver-client.js";
 
 const source = 'https://example.invalid/a?title="hello"&x=$(echo nope)';
 assert.deepEqual(JSON.parse(command("play", source, 9)), { command: ["loadfile", source, "replace"], request_id: 9 });
@@ -89,4 +90,78 @@ function fixture(available = true) {
   assert.equal(engine.snapshot().status, "idle");
   await engine.close();
 }
-console.log("ipc.check ok (protocol, metadata, lifecycle, missing mpv)");
+// Receiver loss clears liveness, but never resumes automatically. Ordinary
+// command/transport errors retain the healthy generation.
+for (const detectedByPoll of [true, false]) {
+  const bridge = fixture(), engine = new RadioEngine(bridge);
+  await engine.play(source);
+  const request = bridge.request;
+  bridge.request = async () => { throw new ReceiverGone("expired"); };
+  if (detectedByPoll) {
+    await engine.poll();
+    assert.equal(engine.started, false);
+    assert.equal(engine.snapshot().source, null);
+    await engine.poll(); await engine.pause();
+    assert.equal(bridge.calls.filter((c) => c === "start").length, 1);
+    bridge.request = request;
+  } else {
+    bridge.request = async (...args) => { bridge.request = request; throw new ReceiverGone("expired"); };
+  }
+  await engine.play(source);
+  assert.equal(engine.snapshot().status, "loading");
+  assert.equal(bridge.calls.filter((c) => c === "start").length, 2);
+  bridge.request = async () => { throw new Error("command failed"); };
+  await engine.pause();
+  assert.equal(engine.started, true);
+  bridge.request = request;
+  await engine.play(source);
+  assert.equal(bridge.calls.filter((c) => c === "start").length, 2);
+  await engine.close();
+}
+
+// Exercise the actual bridge generation/cancellation logic with a gated exec.
+for (const blockAction of ["close", "start"]) {
+  const calls = [];
+  let generation = 0, release, entered;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const blocked = new Promise((resolve) => { entered = resolve; });
+  let gate = false;
+  const bridge = receiverClient({ script: "receiver.py", newToken: () => String(++generation),
+    exec: async (program, args) => {
+      if (program === "mpv") return { code: 0 };
+      const [, action, token] = args;
+      calls.push([action, token]);
+      if (gate && action === blockAction) { gate = false; entered(); await pending; }
+      return { code: 0, stdout: "" };
+    } });
+  const engine = new RadioEngine(bridge);
+  await engine.play(source);
+  // ReceiverGone from poll, as opposed to arbitrary mpv command failure.
+  const original = bridge.request;
+  bridge.request = async () => { throw new ReceiverGone("expired"); };
+  await engine.poll();
+  bridge.request = original;
+  gate = true;
+  const recovery = engine.play(source);
+  await blocked;
+  await engine.close();
+  release(); await recovery;
+  assert.equal(engine.snapshot().status, "closed");
+  assert.equal(generation, blockAction === "close" ? 1 : 2);
+  if (generation === 2) assert.ok(calls.some(([a, t]) => a === "close" && t === "2"));
+  const count = calls.length;
+  await engine.play(source); await engine.poll();
+  assert.equal(calls.length, count, "Final close must cancel every future generation");
+}
+{
+  let result = { code: 3, stderr: "Receiver closed" };
+  const bridge = receiverClient({ script: "receiver.py", newToken: () => "session",
+    exec: async (_program, args) => args[1] === "start" ? { code: 0, stdout: "" } : result });
+  await bridge.start();
+  await assert.rejects(bridge.request(command("stop")), ReceiverGone);
+  result = { code: 0, stdout: '{"request_id":1,"error":"command failed"}\n' };
+  await assert.rejects(bridge.request(command("stop")), (e) => !(e instanceof ReceiverGone));
+  result = { code: 1, stderr: "timed out" };
+  await assert.rejects(bridge.request(command("stop")), (e) => !(e instanceof ReceiverGone));
+}
+console.log("ipc.check ok (protocol, metadata, lifecycle, missing mpv, recovery generations)");
