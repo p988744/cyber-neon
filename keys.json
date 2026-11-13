@@ -1,0 +1,5 @@
+{
+  "layout:Cyberpunk-Neon": {
+    "cmd-p": "mod.open:cyberneon-picker"
+  }
+}
