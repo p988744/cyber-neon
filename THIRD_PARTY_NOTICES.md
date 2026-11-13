@@ -17,6 +17,8 @@ Everything else (`cyberneon-jobs`, the map terrain, the hand-drawn `jobs.svg`, t
 
 ## Not affiliated
 
+**This is an unofficial fan work and is not approved/endorsed by CD PROJEKT RED.**
+
 Cyberpunk-Neon is a fan-made layout *inspired by* the user interface of Cyberpunk 2077. It contains no game assets, logos, fonts, maps or text, and it isn't affiliated with or endorsed by CD PROJEKT RED. Cyberpunk 2077 is a trademark of CD PROJEKT S.A.
 
 ## ISC license text (Lucide)

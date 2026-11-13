@@ -10,8 +10,8 @@ import { agents, spaces, terminals, run, hc, theme, settings, props, closeOverla
 
 const W = globalThis.window; // herdr also exports window()
 const anim = () => shared("cyberneon.animations") !== false;
-// Breach-style hex codes: row codes cycle this list by index; buffer slots pick from it by typed char.
-const CODES = ["1C", "55", "BD", "E9", "7A", "FF"];
+// Decorative hex codes (our own set, not the game's): row codes cycle this list by index; buffer slots pick from it by typed char.
+const CODES = ["3A", "7F", "C2", "0D", "9E", "41"];
 const SLOTS = 6;
 const CUT = 12;
 // Top-left 45° cut, % coords so it fits any size.
@@ -289,7 +289,7 @@ export default class Picker extends View {
       })
       .child(
         h_flex().h(36).flex_none().gap(10).items_center().border_b(1).border_color(t.accent)
-          .child(div().flex_none().font_family(MONO).text_size(13).text_color(t.accent).child("ACCESS POINT //"))
+          .child(div().flex_none().font_family(MONO).text_size(13).text_color(t.accent).child("UPLINK //"))
           .child(Input.new(this.input).flex_1().min_w(0).h_full().font_family(MONO).text_size(12.8).text_color(t.foreground))
           .child(div().flex_none().font_family(MONO).text_size(18).text_color(matches ? t.working : t.blocked).child(`00:${String(matches).padStart(2, "0")}`))
           .child(div().id("picker-esc").flex_none().px(6).py(2).rounded(0).border_1().border_color(t.border).font_family(MONO).text_size(10).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => this.close()).child("ESC")),

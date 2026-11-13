@@ -4,7 +4,7 @@ A black-and-red Herdr window in the style of a near-future game HUD. A 340px sid
 
 ![Cyberpunk-Neon](preview.png)
 
-Inspired by Cyberpunk 2077's interface. It uses no game assets, logos or fonts, and it isn't affiliated with CD PROJEKT RED. Every shape, icon and map is drawn from code or by hand. The fonts are open (OFL).
+**This is an unofficial fan work and is not approved/endorsed by CD PROJEKT RED.** Inspired by Cyberpunk 2077's interface. It uses no game assets, logos or fonts, and it isn't affiliated with CD PROJEKT RED. Every shape, icon and map is drawn from code or by hand. The fonts are open (OFL).
 
 ---
 
@@ -140,7 +140,7 @@ Share Tech Mono 11px `muted`, segments split by `▮` in `border`, 10px gaps:
 
 ### Overlays
 
-- **Picker (`cmd-p`, `cyberneon-picker`):** a 640px popup at the top, 80% of the window tall, 40px down. Its panel has a 12px top-left cut with a 1px `accent` edge on `popover`, and 8px `accent` brackets at the other three corners. Header row 36px with an `accent` rule under it: `ACCESS POINT //` (Share Tech Mono 13px `accent`), the search box, a readout `00:07` (Share Tech Mono 18px, the number of matching tabs; cyan, red at zero) and a square `ESC` button. Under it, `//01 BUFFER` and six 24×18 slots that fill with hex codes as you type, plus `MATCH//TABS` at the right; this is decoration. Rows start with a code from `1C 55 BD E9 7A FF` (Share Tech Mono 12px, `dim`, cyan when selected). The selected row has a `#5EF6FF26` fill and a 1px cyan border. States are 6×6 squares. It fades in over 150ms.
+- **Picker (`cmd-p`, `cyberneon-picker`):** a 640px popup at the top, 80% of the window tall, 40px down. Its panel has a 12px top-left cut with a 1px `accent` edge on `popover`, and 8px `accent` brackets at the other three corners. Header row 36px with an `accent` rule under it: `UPLINK //` (Share Tech Mono 13px `accent`), the search box, a readout `00:07` (Share Tech Mono 18px, the number of matching tabs; cyan, red at zero) and a square `ESC` button. Under it, `//01 BUFFER` and six 24×18 slots that fill with hex codes as you type, plus `MATCH//TABS` at the right; this is decoration. Rows start with a code from `3A 7F C2 0D 9E 41` (Share Tech Mono 12px, `dim`, cyan when selected). The selected row has a `#5EF6FF26` fill and a 1px cyan border. States are 6×6 squares. It fades in over 150ms.
 - **Context menu (`cyberneon-menu`, 200px):** right-click a tab or a space. Cut 10px with an `accent` edge and a bracket at the bottom right. Rows are 26px, Rajdhani SemiBold 13px, with 13px icons and shortcut hints in Share Tech Mono 10px `dim`. Close and remove actions are in `blocked`. Groups have titles like `//01 TAB`, `//02 TERMINATE`, `SYSTEM`, `THEME` (Chakra Petch SemiBold 9px `dim`). The selected row gets a cyan band and `▸`. It fades in over 120ms.
 - **New menu (`cyberneon-new-menu`, 250px):** the tab bar's `+`. Header `NEW // SESSION` (Share Tech Mono 9px `accent`), Terminal, `//01 START AN AGENT` (installed agents with keys 1-9, others marked `not installed`), `//02 WORKSPACE` (New space, New worktree…, Open worktree…). Height is `min(491, 192 + rows × 26)`.
 - **Toast (`cyberneon-toast`, 360×96):** a `raised` card with a 12px top-left cut and a 1px `accent` edge (`hover` fill on hover). Top line: a tag in Chakra Petch SemiBold 10.5px (`TASK COMPLETE` on yellow, `INPUT REQUIRED` or `ERROR` on red, else `NOTICE` on yellow), then the notification icon, then `14:02:37 // 0x01F` at the right in Share Tech Mono 9px `dim`. Then the title (Rajdhani Bold 14px) and the body (11px `muted`). A machine-login toast shows the `hc machine login <name>` command in Share Tech Mono with a square `COPY` / `COPIED` button.
@@ -285,7 +285,7 @@ Every mod is `place: "none"` (only the layout places it). All but `cyberneon-job
 | `cyberneon-jobs` | (new) | `job-hud` (`role: "hud"`), `jobs` (`role: "journal"`) | GitHub quest tracker; `title: "Jobs"` |
 | `cyberneon-status` | `workspace-status` | `status` | readout strip, clock |
 | `cyberneon-toast` | `toast` | root `toast` | in-game card; overlay 360×96 |
-| `cyberneon-picker` | `picker` | `cmd-p` | breach-style picker; overlay popup, at top, offset 40, 640 wide, 0.8 tall, `frame: "none"` |
+| `cyberneon-picker` | `picker` | `cmd-p` | hacking-style picker; overlay popup, at top, offset 40, 640 wide, 0.8 tall, `frame: "none"` |
 | `cyberneon-menu` | `menu` | opened by tabs and spaces | context menu; overlay 200×260, `frame: "none"` |
 | `cyberneon-new-menu` | `new-menu` | opened by the tabs `+` | new tab/agent/space menu; overlay 250×512, `frame: "none"` |
 
@@ -412,7 +412,7 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 8. Hovering an agent row for 400ms opens the `SCAN // 0x…` card beside the sidebar, with `//TELEMETRY` bars from a Claude Code or Codex status line and a THREAT bar.
 9. In a folder whose `origin` is on github.com, with a branch that has an open PR: the journal shows `owner/repo // branch // NS AGO`, the PR under `MAIN JOBS` with its risk, and the HUD at the top right shows `JOB #n`, the title and up to three open objectives. `–` shrinks it to one line, `×` hides it, the journal's `HUD` brings it back. In a folder with no GitHub remote, the journal says `NO UPLINK // not a GitHub repo` and the HUD is gone.
 10. The right panel opens on Jobs for a new space; the tab bar's Files / Changes / Jobs toggles switch pages, and clicking the lit one hides the panel.
-11. `cmd-p` opens the `ACCESS POINT //` picker with a `00:NN` readout that turns red at 0 matches; Enter goes to the selected tab.
+11. `cmd-p` opens the `UPLINK //` picker with a `00:NN` readout that turns red at 0 matches; Enter goes to the selected tab.
 12. Right-clicking a tab opens the cut-corner `cyberneon-menu`; the tabs `+` opens `NEW // SESSION`.
 13. Clicking `ANIM ON` turns it to `ANIM OFF`: the glitch stops, bars freeze, blinks stop, and new tabs appear without decoding. Clicking again restores motion.
 14. `node mods/cyberneon-agents/telemetry.check.mjs`, `node mods/cyberneon-spaces/districts.check.mjs` and `node mods/cyberneon-jobs/rules.check.mjs` each pass.

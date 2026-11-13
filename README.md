@@ -2,9 +2,11 @@
 
 A Herdr Desktop layout inspired by the user interface of Cyberpunk 2077: red-on-black panels, cut corners, a city map of your spaces, and a GitHub job journal.
 
+> **This is an unofficial fan work and is not approved/endorsed by CD PROJEKT RED.** Cyberpunk 2077 is a trademark of CD PROJEKT S.A.; this layout uses no game assets.
+
 ![Cyberpunk-Neon](preview.png)
 
-Version 0.1.0 · Apache-2.0 · for Herdr App 0.1.15 or later · fan-made, not affiliated with CD PROJEKT RED
+Version 0.1.1 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan work
 
 ## What you get
 
