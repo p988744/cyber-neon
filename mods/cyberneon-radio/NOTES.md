@@ -193,7 +193,13 @@ scope). Invalid protocols and control characters cannot reach engine commands.
 `engine.play(string)` remains compatible. `engine.play(string[])` copies and
 validates **all 1..1000 items before any receiver startup**. One serialized Play
 sends `loadfile(first, replace)` followed by `loadfile(item, append)` in array
-order and restores current volume/mute settings. A new Play replaces the entire
+order and restores current volume/mute settings. Commands are sent in batches of
+at most 32, each fully acknowledged before the next, so the helper's write-before-
+read exchange cannot fill both Unix socket buffers with a large queue. All batches
+stay in one serialized Play; controls and other Plays wait until it finishes.
+Close bypasses that job immediately and prevents further batches. Receiver loss
+between batches retries the full requested queue once, beginning with replace on
+the new receiver. A new Play replaces the entire
 old queue; mpv advances naturally, with no repeat or shuffle enabled here.
 `snapshot().source` is the first requested item (not the current queue position),
 while `title` follows current mpv ICY/media metadata on poll. Pause/resume, stop,
@@ -214,3 +220,19 @@ local M3U/PLS/nested playlists, cycles, bounds, restricted and unsupported sourc
 `ipc.check.mjs` additionally verifies array validation/copy/command ordering;
 `recovery.integration.mjs` verifies real mpv queue order, advancing and replacement
 with generated silence before its existing receiver lifecycle checks.
+
+### Large queue regression (#15 review)
+
+```sh
+node mods/cyberneon-radio/queue.integration.mjs
+```
+
+This drives the real engine, Python helper, guardian and mpv with 500 then 1000
+tracks (1000 repeated), using ordered symlinks to generated silence. It asserts
+exact playlist order/count and receiver reuse, then checks queued controls/Play
+replacement and close after a real middle batch acknowledgment (no subsequent
+batches or queued playback). Before batching, 500-track Play fails with `timed out`;
+with acknowledgment batches the full 1000-track contract is retained. The IPC
+check also gates a middle batch to verify serialization, immediate close while a
+request is pending, and full-queue replacement recovery after midqueue receiver
+loss. No receiver timeout or source count limit was raised or lowered.

@@ -137,6 +137,61 @@ for (const detectedByPoll of [true, false]) {
   await engine.close();
 }
 
+// Gate a middle batch: queued controls and Plays cannot interleave; close can
+// bypass the job and must prevent every remaining batch and queued Play.
+for (const closeDuringLoad of [false, true]) {
+  const bridge = fixture(), engine = new RadioEngine(bridge);
+  const request = bridge.request;
+  let enter, release, requests = 0;
+  const entered = new Promise(resolve => { enter = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  bridge.request = async wire => {
+    await request(wire);
+    if (++requests === 2) { enter(); await gate; }
+    return [];
+  };
+  const sources = Array.from({ length: 1000 }, (_, i) => `/tmp/${i}.wav`);
+  const playing = engine.play(sources);
+  const stopping = engine.stop();
+  const replacing = engine.play("/tmp/replacement.wav");
+  await entered;
+  assert.ok(requests === 2 && bridge.calls.filter(Array.isArray).length < 1000);
+  assert.ok(!bridge.calls.some(c => Array.isArray(c) && c[0] === "stop"));
+  if (closeDuringLoad) await engine.close();
+  release();
+  await Promise.all([playing, stopping, replacing]);
+  const loads = bridge.calls.filter(c => Array.isArray(c) && c[0] === "loadfile");
+  if (closeDuringLoad) {
+    assert.equal(requests, 2, "close cancels remaining batches without waiting for load");
+    assert.equal(engine.snapshot().status, "closed");
+  } else {
+    assert.deepEqual(loads.map(c => c[1]), [...sources, "/tmp/replacement.wav"]);
+    const stop = bridge.calls.findIndex(c => Array.isArray(c) && c[0] === "stop");
+    assert.equal(bridge.calls[stop - 1][0], "set_property");
+    assert.deepEqual(bridge.calls[stop + 1], ["loadfile", "/tmp/replacement.wav", "replace"]);
+  }
+  await engine.close();
+}
+// Loss halfway through a queue restarts with replace and replays the entire
+// requested order on the fresh receiver, never just the unacknowledged suffix.
+{
+  const bridge = fixture(), engine = new RadioEngine(bridge);
+  const request = bridge.request;
+  let requests = 0;
+  bridge.request = async wire => {
+    if (++requests === 2) throw new ReceiverGone("lost during queue");
+    return request(wire);
+  };
+  const sources = Array.from({ length: 1000 }, (_, i) => `/tmp/${i}.wav`);
+  assert.equal((await engine.play(sources)).error, null);
+  assert.equal(bridge.calls.filter(c => c === "start").length, 2);
+  const loads = bridge.calls.filter(c => Array.isArray(c) && c[0] === "loadfile");
+  const recovered = loads.findIndex((c, i) => i > 0 && c[2] === "replace");
+  assert.ok(recovered > 0);
+  assert.deepEqual(loads.slice(recovered).map(c => c[1]), sources);
+  await engine.close();
+}
+
 // Exercise the actual bridge generation/cancellation logic with a gated exec.
 for (const blockAction of ["close", "start"]) {
   const calls = [];

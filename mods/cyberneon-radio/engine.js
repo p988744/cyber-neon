@@ -43,7 +43,8 @@ export class RadioEngine {
     // naturally; each explicit play replaces the old queue, without repeat/shuffle.
     const sources = Array.isArray(source) ? [...source] : [source];
     if (!sources.length || sources.length > 1000) throw new Error("Expected 1..1000 radio sources");
-    const load = sources.map((item, i) => command(i ? "append" : "play", item, i + 1)).join("");
+    const messages = sources.map((item, i) => command(i ? "append" : "play", item, i + 1));
+
     return this.enqueue(async () => {
       // Only an explicit Play may recover. Also handle expiry not yet seen by
       // poll, on this same click, with at most one replacement attempt.
@@ -60,8 +61,15 @@ export class RadioEngine {
           this.started = true;
         }
         try {
-          await this.request(load + command("pause", false, sources.length + 1)
-            + command("volume", this.state.volume, sources.length + 2) + command("mute", this.state.muted, sources.length + 3));
+          const queue = [...messages, command("pause", false, sources.length + 1),
+            command("volume", this.state.volume, sources.length + 2), command("mute", this.state.muted, sources.length + 3)];
+          // The helper writes before it reads. Bound outstanding replies to avoid
+          // duplex socket backpressure; acknowledge each batch before sending more.
+          // Keep all batches within this one serialized job (no control interleaving).
+          for (let i = 0; i < queue.length; i += 32) {
+            if (this.closed) return;
+            await this.request(queue.slice(i, i + 32).join(""));
+          }
         } catch (error) {
           if (error instanceof ReceiverGone && attempt === 0 && !this.closed) continue;
           throw error;
