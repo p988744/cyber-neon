@@ -8,6 +8,7 @@ const root = await mkdtemp(join(tmpdir(), "radio-search-render-"));
 try {
   const mod = join(root, "mods", "cyberneon-radio");
   await cp(fileURLToPath(new URL(".", import.meta.url)), mod, { recursive: true });
+  execFileSync("herdr-app", ["check", mod], { env: { ...process.env, HERDR_APP_HOME: root }, stdio: "inherit" });
   await writeFile(join(mod, "main.js"), `
 import { View } from "gpui-kit";
 import { v_flex } from "gpui-base";

@@ -70,6 +70,10 @@ node mods/cyberneon-radio/search.check.mjs
 python3 -B mods/cyberneon-radio/search.check.py
 python3 -B mods/cyberneon-radio/storage.check.py
 node mods/cyberneon-radio/stations.check.mjs
+node mods/cyberneon-radio/search.render.check.mjs
+node mods/cyberneon-radio/ui.check.mjs
+node mods/cyberneon-radio/render.check.mjs
+node mods/cyberneon-radio/tuner.integration.mjs
 ```
 
 These use offline directory fixtures and temporary config folders: metadata,
@@ -77,4 +81,12 @@ invalid rows, failure/retry state, stale responses, idempotent Add, preserving
 live edits, eight simultaneous writers, malformed files, bounds, DNS discovery,
 generic headers/query parameters, server fallback, external edit during save,
 temp cleanup, permission bits and symlink rejection. They never modify user
-config, start playback or contact station streams.
+config or contact station streams. Native fixtures check eager builders for all
+directory states, without changing the live app. View-handler checks execute the
+actual Search/Add controls and shared Tuner/store wiring while off and on,
+asserting no selection, prepare or playback side effect. `tuner.integration.mjs`
+additionally uses the actual `localStations()` adapter and real engine/mpv with
+generated silence in a scratch config: Add preserves a newer manual edit and
+does not replace the playing queue or allocate a receiver. Eager native checks
+do not verify pixels or pointer interaction; live screenshots/audible streams
+are not tested.

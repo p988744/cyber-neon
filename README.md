@@ -48,12 +48,17 @@ herdr-app do layout.switch '{"name":"Cyber-Neon"}'
 - `git` in your spaces' folders: read-only to find branches and remotes, and `git log` / `git show --stat` for the GRAPH page. The only writes come from your clicks on **▶ LAUNCH** or **▶ DISPATCH**: `git worktree add` (making the `milestone-…` or `issue-…` branch if it doesn't exist yet), local only.
 - `gh` with your own login, **read-only**, only for folders whose remote is on github.com. It calls `pr view`, `pr list`, `issue list`, `issue view` and `api …/milestones`, plus one GraphQL count of open issues and milestones per repo, at most every 2 to 10 minutes. The panel itself never writes to GitHub.
 - `hc read <terminal>` once when you open an agent's scan card, to read its status line (context and usage). `hc run` / `hc send` and Herdr's `space.new`, `tab.new` and `terminal.keep` when you click LAUNCH or DISPATCH.
-- `cyberneon-radio` uses local `mpv` and `python3` (macOS/Linux) only after play
-  is requested. No stations or music ship. The tuner reads your station list;
-  reloading that list never starts playback. See its notes for station setup,
-  the engine interface and cleanup.
+- `cyberneon-radio` uses local `python3` for config, source resolution and explicit
+  Radio Browser searches, and starts local `mpv` only on Play (macOS/Linux).
+  In the tuner, **FIND A STATION** searches by tag and shows country, codec/bitrate
+  and directory check status. **ADD** saves to your config folder's `radio.json`
+  without tuning. Search uses DNS-discovered directory servers and a generic
+  User-Agent. The directory grants no station license; each station's terms apply.
+  No stations or music ship. Reloading the list never starts playback.
 
-The panel sends nothing anywhere. The agents you start are a different matter: they run with your tools and logins, and talk to their own providers.
+Radio directory searches and selected stream playback contact their respective
+servers on your explicit actions. The agents you start run with your tools and
+logins, and talk to their own providers.
 
 ## Before you click LAUNCH or DISPATCH
 
@@ -68,6 +73,8 @@ The panel sends nothing anywhere. The agents you start are a different matter: t
 - Each `mods/cyberneon-*/NOTES.md`: per-mod details and pitfalls.
 - [`mods/cyberneon-radio/NOTES.md`](mods/cyberneon-radio/NOTES.md): radio engine,
   station setup, tuner controls, dependencies, lifecycle and checks.
+- [`mods/cyberneon-radio/SEARCH.md`](mods/cyberneon-radio/SEARCH.md): directory search,
+  Add persistence, API references, concurrency limits and isolated checks.
 
 ## License
 
