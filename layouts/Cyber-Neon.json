@@ -4,7 +4,7 @@
     "name": "main",
     "version": "0.1.15"
   },
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "row",
   "titlebar": "none",
   "traffic_lights": [
@@ -175,7 +175,7 @@
                       "id": "files",
                       "type": "block",
                       "content": {
-                        "mod": "files"
+                        "mod": "cyberneon-files"
                       }
                     },
                     {

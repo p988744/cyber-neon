@@ -5,7 +5,7 @@ Their licenses apply to those parts, and their notices are kept here as the lice
 
 | Part | Based on | License | Copyright |
 | --- | --- | --- | --- |
-| `mods/cyberneon-*/` except `cyberneon-jobs` | the mods shipped with Herdr App 0.1.15 (`agents`, `workspace-chrome`, `menu`, `new-menu`, `pane`, `picker`, `spaces`, `workspace-status`, `tabs`, `toast`), each named in its `mod.json` `cloned_from`, then restyled and extended | Apache-2.0 | Herdr |
+| `mods/cyberneon-*/` except `cyberneon-jobs` and `cyberneon-graph` | the mods shipped with Herdr App 0.1.15 (`agents`, `workspace-chrome`, `files`, `menu`, `new-menu`, `pane`, `picker`, `spaces`, `workspace-status`, `tabs`, `toast`), each named in its `mod.json` `cloned_from`, then restyled and extended | Apache-2.0 | Herdr |
 | `layouts/Cyber-Neon.json` | Herdr's `main` layout 0.1.15 (`cloned_from`) | Apache-2.0 | Herdr |
 | the `.svg` icons in `mods/cyberneon-chrome/`, `mods/cyberneon-pane/` and `mods/cyberneon-tabs/` (except `jobs.svg`) | shipped with the Herdr mods above; several are [Lucide](https://lucide.dev) icons | Apache-2.0 / ISC | Herdr; Lucide Contributors (portions Cole Bemis, Feather, MIT) |
 | `mods/cyberneon-chrome/fonts/Rajdhani-*.ttf` | [Rajdhani](https://fonts.google.com/specimen/Rajdhani), unchanged | SIL Open Font License 1.1 (`OFL-rajdhani.txt`) | Indian Type Foundry |
@@ -13,7 +13,7 @@ Their licenses apply to those parts, and their notices are kept here as the lice
 | `mods/cyberneon-chrome/fonts/ShareTechMono-Regular.ttf` | [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono), unchanged | SIL Open Font License 1.1 (`OFL-sharetechmono.txt`) | Carrois Apostrophe |
 | `themes/Cyber-Neon.json` terminal colors (`ansi`) | the "Cyberpunk Scarlet Protocol" scheme from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) | MIT | Mark Badolato and contributors |
 
-Everything else (`cyberneon-jobs`, the map terrain, the hand-drawn `jobs.svg`, the theme's panel colors) is original to this project.
+Everything else (`cyberneon-jobs`, `cyberneon-graph`, the map terrain, the hand-drawn `jobs.svg`, the theme's panel colors) is original to this project.
 
 ## Not affiliated
 

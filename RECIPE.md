@@ -142,6 +142,8 @@ A stack, `panel-body`, with three pages switched by the tab bar's toggles: **Fil
   - Slugs: the title's ASCII words, lowercase, dash-joined, at most 40 characters (`rules.js`). `DEPLOY_ARGV` (`["claude"]`) is the fallback when the agent list can't be read. These clicks are the mod's only writes: git worktrees and local terminals, never GitHub.
 - No GitHub remote: `NO UPLINK // not a GitHub repo` in `blocked`. A `gh` failure: `NO UPLINK // gh not logged in` (or `rate limited`, or the first line of the error).
 
+- **Files panel (`cyberneon-files`, a clone of Herdr's `files`, block id still `files`):** unchanged except for markdown (`.md`, `.markdown`, `.mdx`). Those open rendered with `TextView.markdown` in a scrollable 12px-padded area, selectable. The header gets an 18px chip, `SOURCE` (or `RENDER` when showing source), in Chakra Petch SemiBold 10.5px with a 1px `border` (`accent` on hover), which flips `cyberneon.files.render` (default rendered) for every markdown file. Source is the shipped read-only code view. Icons still load from `mods/files/`.
+
 - **GRAPH page (`cyberneon-graph`, block `graph`, opened by the tab bar's fourth panel button):** the focused pane's repo as a commit graph, up to 300 commits.
   - Header: `GRAPH // <repo> // <branch>`, then `ALL | HEAD` chips (all refs or the current branch) and `SYNC`.
   - Rows are 24px. A lane is 12px wide: a 1.5px line per lane in the colors `accent`, `working`, `done`, `ansi5`, `ansi9`, `ansi6` in turn, with 45° joins and merges. Commits are 7px diamonds, merges hollow, and HEAD gets a 10px `accent` ring.

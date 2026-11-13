@@ -6,7 +6,7 @@ A Herdr Desktop layout inspired by the user interface of Cyberpunk 2077: red-on-
 
 ![Cyber-Neon](preview.png)
 
-Version 0.4.0 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan work
+Version 0.4.1 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan work
 
 ## What you get
 
@@ -19,6 +19,7 @@ Version 0.4.0 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan w
   - A card with an agent on it shows its state (`▶ EXEC`), and **JACK IN** goes to it. An issue with an open PR from its branch shows `PR #<n>`: it's waiting on your review.
   - Agents are linked to their issue by branch and folder name (`issue-<n>…`, `<n>-…`, `milestone-<n>…`). `<slug>` is the title's ASCII words, at most 40 characters.
 - **GRAPH page**: the focused repo's commit graph in the right panel, with neon lanes, diamond commits, branch and tag chips, a hover card with stats, and click to copy the hash. It's local and read-only git.
+- **Files**: markdown files open rendered, with a **SOURCE / RENDER** switch in the preview's header.
 - **Everything restyled**: tabs, pane headers, menus, a hacking-style `cmd-p` picker, in-game style notifications and a status readout. Blocked agents are impossible to miss.
 - **`ANIM ON/OFF`** in the sidebar footer turns every animation off.
 
