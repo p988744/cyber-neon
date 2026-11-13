@@ -66,8 +66,8 @@ The panel sends nothing anywhere. The agents you start are a different matter: t
 - `RECIPE.md`: the full brief (what you see, how it behaves, how it's built, gotchas). It's also how to rebuild it from scratch.
 - `docs/DESIGN.md`: the early design notes (in Traditional Chinese).
 - Each `mods/cyberneon-*/NOTES.md`: per-mod details and pitfalls.
-- [`mods/cyberneon-radio/NOTES.md`](mods/cyberneon-radio/NOTES.md): reusable radio
-  engine for the upcoming station list and UI, dependencies, lifecycle and checks.
+- [`mods/cyberneon-radio/NOTES.md`](mods/cyberneon-radio/NOTES.md): radio engine,
+  station setup, tuner controls, dependencies, lifecycle and checks.
 
 ## License
 

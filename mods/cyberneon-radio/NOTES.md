@@ -1,14 +1,16 @@
-# cyberneon-radio — playback core (#7)
+# cyberneon-radio — engine, stations and tuner
 
-No stations or music ship in M2. No source is loaded at startup. The station
-list (#8) and controls (#10) extend this mod; this PR does not change the layout.
-`main.js` is a minimal layout-owned View with an idle/error/title readout, no
-buttons. `mod.json` uses `place: none`, so installing it alone starts nothing.
+No stations or music ship in M2. No source is loaded at startup. The layout places
+one `main.js` View in the right work area's 28px bottom status bar. Its RADIO chip
+opens a tuner in a native popover, retaining that same owner and receiver when
+dismissed. `mod.json` uses `place: none`, so installing it alone starts nothing.
+See [UI.md](UI.md) for controls, layout-only keys, UI state/extension seams,
+ANIM OFF behavior and UI checks. The #8 station/source API is documented below.
 
 ## Reusable interface
 
 `engine.js` exports `RadioEngine(bridge)` and `NO_RECEIVER`. The View creates
-`this.engine` with `localReceiver()` from `bridge.js`. Future UI handlers call:
+`this.engine` with `localReceiver()` from `bridge.js`. The UI controller calls:
 
 ```js
 cx.spawn(async (cx) => {
@@ -88,6 +90,10 @@ node mods/cyberneon-radio/ipc.check.mjs
 python3 -B mods/cyberneon-radio/receiver.check.py # requires mpv; generated silence
 node mods/cyberneon-radio/recovery.integration.mjs # requires mpv; generated silence
 herdr-app check mods/cyberneon-radio
+node mods/cyberneon-radio/tuner.check.mjs
+node mods/cyberneon-radio/ui.check.mjs
+node mods/cyberneon-radio/render.check.mjs
+node mods/cyberneon-radio/tuner.integration.mjs # actual station adapter + mpv; silence
 ```
 
 The JS check covers JSON escaping, controls, metadata, no-mpv no-op behavior,

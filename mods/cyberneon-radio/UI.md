@@ -80,6 +80,7 @@ node mods/cyberneon-radio/tuner.check.mjs
 node mods/cyberneon-radio/ui.check.mjs
 node mods/cyberneon-radio/render.check.mjs
 herdr-app check mods/cyberneon-radio
+node mods/cyberneon-radio/tuner.integration.mjs
 ```
 
 The controller checks cover empty/off/playing states, copied snapshots, queue
@@ -92,3 +93,21 @@ media or changes the live app layout. `herdr-app check` validates eager builders
 it does not lay out pixels or exercise pointer drags. Live screenshot/pointer
 and audible stream checks are not performed. Engine/station integration checks
 are documented in NOTES.md; their media is generated silence in temporary files.
+`tuner.integration.mjs` exercises the actual `localStations()` adapter against a
+scratch radio.json and local files, through `Tuner` and the real engine/mpv. It
+checks ordered folder queues, single-file replacement, mute/volume, malformed
+edits, browser-only errors and receiver reuse without reading user config.
+
+## Follow-on UI seams
+
+The `panel()` method owns the tuner content; its station list/footer area is the
+extension point for #9 search/add controls. `this.store` is the existing store;
+`this.tuner.choose(station)` is an explicit selection/tune action. Saving or
+refreshing the list should never call choose/play by itself.
+
+#11 can extend `Tuner.play(station)` inside the existing serialized UI queue with
+an injected browser opener, while preserving the one layout owner. Browser-open
+state should be separate from `playing` and `engine.snapshot().source`: the RADIO
+chip is the receiver's actual state, and a browser page cannot report its live
+playback/track state through this engine. Stop the receiver before a browser
+handoff and clear browser-open state on a subsequent in-app play or power-off.
