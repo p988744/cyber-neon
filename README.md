@@ -13,6 +13,7 @@ Version 0.2.2 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan w
 - **Space map**: your spaces as points on a generated city map with coast, river and roads. They're placed A to Z by name, with yellow labels (agents, branch, open milestones and issues) and a numbered legend. Hover a point to see every agent in that space.
 - **Agents list with a scanner**: hover an agent for a scan card with its class, state, uptime, path and branch, live context and 5h/7d usage (Claude Code and Codex; model, context and cost for Oh My Pi and OpenCode), and a THREAT meter.
 - **JOBS journal**: for a GitHub repo, the current branch's PR is the main job, with CI checks, review and task boxes as objectives. Your assigned issues are side jobs, and milestone issues are gigs. There's a RISK level per job, a tracked job, and a floating job HUD you can minimize or close.
+- **JACK IN / DEPLOY AGENT**: an issue in JOBS shows the agent working on it (an agent pane in the repo or its `~/.herdr/worktrees/<repo>/` checkouts, on an `issue-<n>…` or `<n>-…` branch), and **JACK IN** jumps to that pane. With no agent, **DEPLOY AGENT** adds a worktree on the branch `issue-<n>-<title slug>` (the title's ASCII words, at most 40 characters), opens a space there and starts Claude Code with the issue as its first message.
 - **GRAPH page**: the focused repo's commit graph in the right panel, with neon lanes, diamond commits, branch and tag chips, a hover card with stats, and click to copy the hash. It's local and read-only git.
 - **Everything restyled**: tabs, pane headers, menus, a hacking-style `cmd-p` picker, in-game style notifications and a status readout. Blocked agents are impossible to miss.
 - **`ANIM ON/OFF`** in the sidebar footer turns every animation off.
@@ -32,7 +33,7 @@ herdr-app do layout.switch '{"name":"Cyber-Neon"}'
 
 ## What it runs and reaches
 
-- `git` (read-only) in your spaces' folders, to find branches and GitHub remotes, and `git log` / `git show --stat` for the GRAPH page. Git never writes under `.git` (`--no-optional-locks`).
+- `git` (read-only) in your spaces' folders, to find branches and GitHub remotes, and `git log` / `git show --stat` for the GRAPH page. Git never writes under `.git` (`--no-optional-locks`), with one exception: when you click **DEPLOY AGENT**, it runs `git worktree add` (making the `issue-<n>-<title slug>` branch if it doesn't exist yet). That click is the only write, and it stays local.
 - `gh` with your own login, **read-only**, only for folders whose remote is on github.com. It calls `pr view`, `issue list`, `issue view` and `api …/milestones`, plus one GraphQL count of open issues and milestones per repo, at most every 2 to 10 minutes. It never writes to GitHub.
 - `hc read <terminal>` once when you open an agent's scan card, to read its status line (context and usage).
 
