@@ -28,6 +28,8 @@ Station parsing, validation, file reads, folders and playlists belong to #8.
 - `station()` / `stations()` / `key(station)` for selection and rendering.
 - `choose(station)`, `step(1|-1)`, `power()`, `mute()`, `volume(0..100)` for
   explicit actions; these return promises and serialize through one queue.
+  The first three accept an optional final `beforePlay(station)` async hook,
+  called with prepared metadata before an engine load; false cancels that load.
 - `playing` for the station whose load the engine acknowledged; `error` and
   `pending` for the readout; `level` / `silenced` for volume/mute preferences.
 - `close()` to prevent pending or later UI work from playing anything. The View
@@ -51,6 +53,14 @@ source. No source is resolved or played on init, refresh or tuner open.
 - The selected station's genre/note and `Explicit content` warning are shown.
   A playing station removed from the config keeps its chip name, ON AIR line
   and explicit warning until stopped or successfully replaced.
+- Keyboard next/previous opens the normal tuner, including when browsing while
+  off. Before explicit playback, the View's `beforePlay` hook presents the
+  normalized station name and warning, then waits for the warning element's
+  first native layout callback before loading. There is no confirmation dialog
+  or second Play action. Dismissal before presentation cancels that pending tune;
+  owner close also releases the wait without playing. This path works with ANIM
+  OFF. The collapsed chip retains a fixed `EXPLICIT` marker beside the actual
+  playing station and `Explicit content` in its tooltip, even after list removal.
 - Empty/loading lists have explicit readouts. Store/prepare/engine errors appear
   in the tuner, including `NO RECEIVER // install mpv`. The store retains its last
   good list on malformed JSON. Browser-only entries surface prepare's error;
@@ -95,7 +105,7 @@ and audible stream checks are not performed. Engine/station integration checks
 are documented in NOTES.md; their media is generated silence in temporary files.
 `tuner.integration.mjs` exercises the actual `localStations()` adapter against a
 scratch radio.json and local files, through `Tuner` and the real engine/mpv. It
-checks ordered folder queues, single-file replacement, mute/volume, malformed
+checks pre-load warning ordering, ordered folder queues, single-file replacement, mute/volume, malformed
 edits, browser-only errors and receiver reuse without reading user config.
 
 ## Follow-on UI seams
@@ -111,3 +121,5 @@ state should be separate from `playing` and `engine.snapshot().source`: the RADI
 chip is the receiver's actual state, and a browser page cannot report its live
 playback/track state through this engine. Stop the receiver before a browser
 handoff and clear browser-open state on a subsequent in-app play or power-off.
+Preserve the optional `beforePlay` hook for in-app loads when extending this
+method; it belongs to the current action's async View context, not a stored one.

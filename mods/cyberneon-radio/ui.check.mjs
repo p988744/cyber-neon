@@ -77,5 +77,85 @@ assert.equal(JSON.stringify(layout.children.find(n => n.id === "sidebar")).inclu
 const keys = JSON.parse(await readFile(new URL("../../keys.json", import.meta.url), "utf8"));
 assert.deepEqual(Object.keys(keys), ["layout:Cyber-Neon"]);
 for (const command of ["next", "prev", "mute"]) assert.ok(Object.values(keys["layout:Cyber-Neon"]).includes(`cyberneon-radio.${command}`));
+// Regression: actual keyboard handler + controller must present the explicit
+// station before loading it, even with the tuner initially closed / ANIM OFF.
+const find = (root, id) => all(root).find(n => n.calls.some(([k, value]) => k === "id" && value === id));
+const contentTexts = root => all(root).flatMap(n => n.items).filter(x => typeof x === "string");
+const explicitStation = { name: "Explicit fixture", url: "/explicit.wav", explicit: true, contentWarning: "Explicit content" };
+const cleanStation = { name: "Clean fixture", url: "/clean.wav", explicit: false };
+for (const command of ["next", "prev"]) {
+  let entries = [cleanStation, explicitStation];
+  const current = { source: cleanStation.url, status: "playing", error: null };
+  let loads = [];
+  const actualEngine = {
+    snapshot: () => ({ ...current }),
+    play: async source => { loads.push(source); Object.assign(current, { source, status: "loading" }); },
+    volume: async () => {}, mute: async () => {}, stop: async () => { current.source = null; },
+    close: async () => { current.source = null; },
+  };
+  const actualStore = {
+    snapshot: () => ({ stations: entries.map(s => ({ ...s })), loading: false }),
+    prepare: async station => ({ station, source: station.url }),
+  };
+  const radio = new Radio();
+  Object.assign(radio, { engine: actualEngine, store: actualStore, tuner: new Tuner(actualEngine, actualStore),
+    open: false, warning: null, warningReady: null, warningGeneration: 0, tuning: 0, volume: { value: () => 50, release() {} } });
+  radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
+  const tasks = [];
+  const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); }, timer: { after() {} } };
+  const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
+  radio.command(command, cx);
+  await flush();
+  assert.equal(radio.open, true, "keyboard action opens the normal tuner");
+  assert.equal(radio.tuner.station().name, explicitStation.name);
+  assert.deepEqual(loads, [], "no explicit load before the warning's native layout");
+  let tree = radio.render();
+  let warning = find(tree, "radio-warning-1");
+  assert.ok(warning);
+  assert.ok(contentTexts(warning).includes("Explicit content // Explicit fixture"));
+  warning.calls.find(([name]) => name === "on_size_change")[1]({ width: 200, height: 16 }, cx);
+  await Promise.all(tasks);
+  assert.deepEqual(loads, [explicitStation.url]);
+  radio.setOpen(false, cx);
+  let chip = find(radio.render(), "radio-chip");
+  assert.ok(contentTexts(chip).includes(explicitStation.name));
+  assert.ok(contentTexts(chip).includes("EXPLICIT"));
+  assert.match(chip.calls.find(([name]) => name === "tooltip")[1], /Explicit content/);
+  entries = [cleanStation]; // removed-but-playing warning must survive collapse
+  chip = find(radio.render(), "radio-chip");
+  assert.ok(contentTexts(chip).includes("EXPLICIT"));
+  assert.ok(contentTexts(chip).includes(explicitStation.name));
+
+  // Dismissal before layout cancels only this pending tune. No confirmation
+  // control, extra dialog, or receiver replacement is introduced.
+  entries = [cleanStation, explicitStation];
+  current.source = cleanStation.url;
+  radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
+  loads = [];
+  radio.command(command, cx); await flush();
+  radio.setOpen(false, cx); await Promise.all(tasks);
+  assert.deepEqual(loads, []);
+  assert.equal(current.source, cleanStation.url);
+
+  // Keyboard browsing while off still presents the selected warning, without
+  // preparing/loading anything or claiming the receiver is on.
+  current.source = null;
+  radio.tuner.select(cleanStation);
+  radio.command(command, cx); await Promise.all(tasks);
+  assert.equal(radio.open, true);
+  assert.ok(contentTexts(radio.render()).includes("Explicit content"));
+  assert.deepEqual(loads, []);
+  assert.equal(find(radio.render(), "radio-explicit"), undefined);
+
+  // Closing the owner while the warning waits must unblock without playing.
+  current.source = cleanStation.url;
+  radio.tuner.select(cleanStation);
+  radio.command(command, cx); await flush();
+  warning.calls.find(([name]) => name === "on_size_change")[1]({ width: 200, height: 16 }, cx);
+  await flush();
+  assert.deepEqual(loads, [], "stale layout callback cannot release a newer warning");
+  await radio.close(); await Promise.all(tasks);
+  assert.deepEqual(loads, []);
+}
 delete globalThis.__radioTest;
 console.log("view controls, motion switch, status placement and layout keys passed");

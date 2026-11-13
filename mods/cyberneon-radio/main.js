@@ -19,6 +19,9 @@ export default class Radio extends View {
     this.open = false;
     this.tuning = 0;
     this.tuneGeneration = 0;
+    this.warningGeneration = 0;
+    this.warning = null;
+    this.warningReady = null;
     this.polling = false;
     this.refreshing = false;
     this.volume = SliderState.new({ min: 0, max: 100, step: 1, value: 50 });
@@ -38,9 +41,41 @@ export default class Radio extends View {
     cx.spawn(async (cx) => {
       for (;;) {
         const command = await nextCommand();
-        if (["next", "prev", "mute"].includes(command)) this.act(command, cx);
+        this.command(command, cx);
       }
     });
+  }
+
+  command(command, cx) {
+    if (!["next", "prev", "mute"].includes(command)) return;
+    // Keyboard browsing has the same visible selection/warning as pointer use.
+    if (command !== "mute") this.open = true;
+    this.act(command, cx);
+  }
+
+  setOpen(open, cx) {
+    this.open = open;
+    if (!open) this.finishWarning(false);
+    cx.notify();
+  }
+
+  finishWarning(shown) {
+    const ready = this.warningReady;
+    this.warningReady = null;
+    if (ready) ready(shown);
+  }
+
+  async presentWarning(station, cx) {
+    if (!station.explicit || this.tuner.closed) return;
+    this.open = true;
+    this.warning = { station, generation: ++this.warningGeneration };
+    const shown = new Promise(resolve => { this.warningReady = resolve; });
+    cx.notify();
+    // The warning's native size callback runs after its first layout. A microtask
+    // or fixed sleep alone cannot ensure the panel was presented before Play.
+    const visible = await shown;
+    this.warning = null;
+    return visible;
   }
 
   refresh(cx) {
@@ -66,14 +101,21 @@ export default class Radio extends View {
       this.tuning = generation;
       cx.timer.after(420, cx => { if (this.tuning === generation) { this.tuning = 0; cx.notify(); } });
     }
-    const job = action === "next" ? this.tuner.step(1) : action === "prev" ? this.tuner.step(-1)
-      : ["volume", "choose"].includes(action) ? this.tuner[action](value) : this.tuner[action]();
-    cx.spawn(async (cx) => { await job; cx.notify(); });
+    cx.spawn(async (cx) => {
+      const beforePlay = station => this.presentWarning(station, cx);
+      const job = action === "next" ? this.tuner.step(1, beforePlay) : action === "prev" ? this.tuner.step(-1, beforePlay)
+        : action === "choose" ? this.tuner.choose(value, beforePlay)
+        : action === "power" ? this.tuner.power(beforePlay)
+        : action === "volume" ? this.tuner.volume(value) : this.tuner[action]();
+      await job;
+      cx.notify();
+    });
     cx.notify();
   }
 
   async close() {
     this.tuner.close();
+    this.finishWarning(false);
     // Start receiver cleanup directly, bypassing pending prepare/controls.
     await this.engine.close();
     this.volume.release();
@@ -91,7 +133,8 @@ export default class Radio extends View {
     const t = theme(), state = this.engine.snapshot(), list = this.store.snapshot();
     const station = this.tuner.station(), on = this.tuner.on(), busy = this.tuner.pending > 0;
     const playing = on ? this.tuner.playing : null;
-    const warning = station?.explicit ? station : playing?.explicit ? playing : null;
+    const warning = this.warning?.station ?? (station?.explicit ? station : playing?.explicit ? playing : null);
+    const warningGeneration = this.warning?.generation;
     const title = on ? state.title || "WAITING FOR TRACK DATA" : "RECEIVER OFF";
     const moving = anim() && on && title.length > 34;
     const error = this.tuner.error || state.error || list.error;
@@ -102,11 +145,14 @@ export default class Radio extends View {
       .font_family("Share Tech Mono").text_size(11).text_color(t.muted)
       .child(h_flex().items_center().justify_between()
         .child(div().font_family("Chakra Petch").font_weight(700).text_color(t.accent).child("RADIO // SIGNAL DECK"))
-        .child(this.button("radio-close", "×", cx => { this.open = false; cx.notify(); })))
+        .child(this.button("radio-close", "×", cx => this.setOpen(false, cx))))
       .child(div().text_size(18).text_color(t.foreground).truncate().child(station?.name || (list.loading ? "LOADING STATIONS" : "NO STATIONS")))
       .when(Boolean(playing) && (!station || this.tuner.key(playing) !== this.tuner.key(station)), el => el.child(div().text_color(t.working).child(`ON AIR // ${playing.name}`)))
       .when(Boolean(station?.genre), el => el.child(div().child(station.genre)))
-      .when(Boolean(warning), el => el.child(div().text_color(t.done).child(`Explicit content${warning.contentWarning && warning.contentWarning !== "Explicit content" ? ` // ${warning.contentWarning}` : ""}`)))
+      .when(Boolean(warning), el => el.child(div().text_color(t.done)
+        .when(Boolean(this.warning), row => row.id(`radio-warning-${this.warning.generation}`)
+          .on_size_change((_size, _cx) => { if (this.warning?.generation === warningGeneration) this.finishWarning(true); }))
+        .child(`Explicit content${this.warning ? ` // ${warning.name}` : ""}${warning.contentWarning && warning.contentWarning !== "Explicit content" ? ` // ${warning.contentWarning}` : ""}`)))
       .when(Boolean(station?.note), el => el.child(div().child(station.note)))
       .child(line)
       .child(div().id("radio-dial").h(18).overflow_hidden().text_color(t.accent).child("┆ · ┆ · ┃ · ┆ · ┆ · ┃ · ┆ · ┆ · ┃")
@@ -138,14 +184,18 @@ export default class Radio extends View {
   render() {
     const t = theme(), state = this.engine.snapshot();
     const name = this.tuner.on() ? this.tuner.playing?.name || "ON" : "OFF";
+    const explicit = this.tuner.on() && this.tuner.playing?.explicit;
     const chip = h_flex().id("radio-chip").h(20).w(180).px(7).gap(5).items_center().border_1()
       .border_color(this.tuner.on() ? t.working : t.border).text_color(this.tuner.on() ? t.working : t.muted)
       .font_family("Share Tech Mono").text_size(11).cursor_pointer().hover(el => el.bg(t.hover))
-      .tooltip(state.error || `Radio // ${name}`).child(div().flex_none().child("RADIO"))
-      .child(div().flex_1().min_w(0).truncate().child(name));
+      .tooltip(`${state.error ? `${state.error} // ` : ""}Radio // ${name}${explicit ? " // Explicit content" : ""}`)
+      .child(div().flex_none().child("RADIO"))
+      .child(div().flex_1().min_w(0).truncate().child(name))
+      .when(Boolean(explicit), el => el.child(div().id("radio-explicit").flex_none().text_size(9).text_color(t.done)
+        .tooltip("Explicit content").child("EXPLICIT")));
     return h_flex().size_full().px(8).items_center().bg(t.chrome).border_t(1).border_color(t.border)
       .child(Popover.new("radio-tuner").anchor("bottom_right").open(this.open)
-        .on_open_change((open, cx) => { this.open = open; cx.notify(); })
+        .on_open_change((open, cx) => this.setOpen(open, cx))
         .trigger(chip).content(this.panel()));
   }
 }

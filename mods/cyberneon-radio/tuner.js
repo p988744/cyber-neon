@@ -31,9 +31,12 @@ export class Tuner {
     this.tail = job.catch(() => {});
     return job;
   }
-  async play(station) {
+  async play(station, beforePlay) {
     if (!station || this.closed) return;
     const prepared = await this.store.prepare(station);
+    if (this.closed) return;
+    // The View can present normalized station metadata before loading audio.
+    if (beforePlay && await beforePlay(prepared.station) === false) return;
     // Closing during playlist resolution must not start a receiver.
     if (this.closed) return;
     await this.engine.play(prepared.source);
@@ -45,13 +48,13 @@ export class Tuner {
       await this.engine.mute(this.silenced);
     }
   }
-  power() {
+  power(beforePlay) {
     return this.enqueue(async () => {
       if (this.on()) await this.engine.stop();
-      else await this.play(this.station());
+      else await this.play(this.station(), beforePlay);
     });
   }
-  step(direction) {
+  step(direction, beforePlay) {
     return this.enqueue(async () => {
       const list = this.stations();
       if (!list.length) return;
@@ -60,13 +63,13 @@ export class Tuner {
       const station = list[(index + direction + list.length) % list.length];
       this.select(station);
       // Off means browse only. A list reload is never a playback command.
-      if (this.on()) await this.play(station);
+      if (this.on()) await this.play(station, beforePlay);
     });
   }
-  choose(station) {
+  choose(station, beforePlay) {
     return this.enqueue(async () => {
       this.select(station);
-      if (this.on()) await this.play(station);
+      if (this.on()) await this.play(station, beforePlay);
     });
   }
   mute() {

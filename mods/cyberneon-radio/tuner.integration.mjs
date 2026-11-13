@@ -53,7 +53,17 @@ try {
   assert.deepEqual(tokens, [], "list load must not allocate receiver");
   await tuner.volume(17); await tuner.mute();
   assert.deepEqual(tokens, []);
-  await tuner.power();
+  let showWarning, enteredWarning;
+  const warningShown = new Promise(resolve => { showWarning = resolve; });
+  const warningEntered = new Promise(resolve => { enteredWarning = resolve; });
+  const play = tuner.power(async station => {
+    assert.equal(station.contentWarning, "Explicit content");
+    enteredWarning();
+    return warningShown;
+  });
+  await warningEntered;
+  assert.deepEqual(tokens, [], "explicit warning precedes receiver allocation/load");
+  showWarning(true); await play;
   assert.equal(tuner.error, null); assert.equal(engine.snapshot().error, null);
   assert.equal(tuner.playing.name, "Synthetic folder");
   assert.equal(engine.snapshot().volume, 17); assert.equal(engine.snapshot().muted, true);
