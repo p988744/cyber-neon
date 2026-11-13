@@ -40,6 +40,17 @@ export function milestoneRisk(ms, now = Date.now()) {
   return left <= 3 * DAY ? "VERY HIGH" : left <= 7 * DAY ? "HIGH" : "MODERATE";
 }
 
+// Milestone card facts: progress from GitHub's own counts (not the 50-issue list), due text, how urgent.
+export function msInfo(ms, now = Date.now()) {
+  const done = ms.closed_issues ?? 0, total = done + (ms.open_issues ?? 0);
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  if (!ms.due_on) return { done, total, pct, due: "NO DUE DATE", hot: false };
+  const days = Math.trunc((Date.parse(ms.due_on) - now) / DAY); // whole days; under a day either way reads TODAY
+  const date = ms.due_on.slice(0, 10);
+  const due = days < 0 ? `DUE ${date} · OVERDUE ${-days}D` : days === 0 ? `DUE ${date} · TODAY` : `DUE ${date} · ${days}D LEFT`;
+  return { done, total, pct, due, hot: days <= 3 && ms.open_issues > 0 };
+}
+
 // Markdown → plain lines. ponytail: regex strip, not a parser; nested/odd markdown may leave stray marks.
 export const plain = (md) => (md ?? "").replace(/\r/g, "")
   .replace(/<!--[\s\S]*?-->/g, "")

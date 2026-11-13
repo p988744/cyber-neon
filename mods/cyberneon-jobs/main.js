@@ -1,7 +1,7 @@
 import { View, div, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { props, panes, spaces, exec, shared, setShared, theme, run } from "herdr";
-import { tasks, prObjectives, prRisk, issueRisk, milestoneRisk, plain } from "./rules.js";
+import { tasks, prObjectives, prRisk, issueRisk, milestoneRisk, msInfo, plain } from "./rules.js";
 
 // Quest tracker driven by GitHub, read-only through `gh`. Two copies (role "hud" floats over
 // `main`, role "journal" sits in the panel); both read one shared cache, one fetch runs at a time.
@@ -15,6 +15,7 @@ const HUD = "cyberneon.jobs.hud";
 const hudMode = () => shared(HUD) ?? "full";
 const anim = () => shared("cyberneon.animations") !== false;
 const cacheKey = (repo) => `cyberneon.jobs.cache.${repo}`;
+const DESC_LINES = 5; // milestone card: description lines shown
 const pickKey = (repo) => `cyberneon.jobs.milestone.${repo}`;
 const trackKey = (repo) => `cyberneon.jobs.tracked.${repo}`;
 const selKey = (repo) => `cyberneon.jobs.selected.${repo}`;
@@ -50,7 +51,7 @@ const json = async (args, cwd, on) => {
   return JSON.parse(r.stdout || "null");
 };
 const issueOf = (i) => ({ number: i.number, title: i.title, url: i.url, state: i.state ?? "OPEN", milestone: i.milestone?.title ?? null,
-  labels: (i.labels ?? []).map((l) => l.name), createdAt: i.createdAt });
+  labels: (i.labels ?? []).map((l) => l.name), tags: (i.labels ?? []).map((l) => ({ name: l.name, color: `#${l.color ?? "888888"}` })), createdAt: i.createdAt, assignees: (i.assignees ?? []).map((a) => a.login) });
 
 // The one fetch. Strictly GET: pr view, issue list, api (default GET).
 async function fetchAll(repo, branch, folder, on) {
@@ -61,13 +62,13 @@ async function fetchAll(repo, branch, folder, on) {
     pr = { number: p.number, title: p.title, url: p.url, state: p.state, isDraft: p.isDraft, reviewDecision: p.reviewDecision,
       body: p.body ?? "", objectives: prObjectives(p) };
   } else if (!/no (open )?pull requests? found/i.test(prRes.stderr)) throw new Error(reason(prRes));
-  const issues = (await json(["issue", "list", "--assignee", "@me", "--state", "open", "--json", "number,title,url,milestone,labels,createdAt", "--limit", "50"], folder, on)).map(issueOf);
+  const issues = (await json(["issue", "list", "--assignee", "@me", "--state", "open", "--json", "number,title,url,milestone,labels,createdAt,assignees", "--limit", "50"], folder, on)).map(issueOf);
   const milestones = (await json(["api", `repos/${repo}/milestones?state=open`], folder, on))
-    .map((m) => ({ number: m.number, title: m.title, url: m.html_url, due_on: m.due_on, open_issues: m.open_issues, description: m.description ?? "" }));
+    .map((m) => ({ number: m.number, title: m.title, url: m.html_url, due_on: m.due_on, open_issues: m.open_issues, closed_issues: m.closed_issues, creator: m.creator?.login ?? null, description: m.description ?? "" }));
   const picked = shared(pickKey(repo));
   const ms = milestones.find((m) => m.number === picked) ?? milestones[0] ?? null;
   const milestoneIssues = ms
-    ? (await json(["issue", "list", "--milestone", ms.title, "--state", "all", "--json", "number,title,state,url,labels,createdAt", "--limit", "50"], folder, on)).map(issueOf)
+    ? (await json(["issue", "list", "--milestone", ms.title, "--state", "all", "--json", "number,title,state,url,labels,createdAt,assignees", "--limit", "50"], folder, on)).map(issueOf)
     : [];
   return { at: Date.now(), branch, milestone: ms?.number ?? null, pr, issues, milestones, milestoneIssues };
 }
@@ -77,12 +78,15 @@ async function fetchAll(repo, branch, folder, on) {
 function sections(cache) {
   const ms = cache.milestones?.find((m) => m.number === cache.milestone);
   const mine = new Set((cache.issues ?? []).map((i) => i.number));
-  const issueJob = (i) => ({ kind: "issue", number: i.number, title: i.title, url: i.url, code: "IS", glyph: "open", risk: issueRisk(i) });
+  const issueJob = (i) => ({ kind: "issue", number: i.number, title: i.title, url: i.url, code: "IS", glyph: "open", risk: issueRisk(i), assignees: i.assignees, tags: i.tags });
   const main = [];
   const pr = cache.pr;
   if (pr) main.push({ kind: "pr", number: pr.number, title: pr.title, url: pr.url, code: "PR", pr, risk: prRisk(pr),
     glyph: pr.state === "MERGED" ? "merged" : pr.isDraft ? "draft" : "open" });
-  if (ms) main.push({ kind: "milestone", number: ms.number, title: ms.title, url: ms.url, code: "MS", ms, risk: milestoneRisk(ms), glyph: "open" });
+  if (ms) main.push({ kind: "milestone", number: ms.number, title: ms.title, url: ms.url, code: "MS", ms, risk: milestoneRisk(ms), glyph: "open",
+    // GitHub milestones have no assignees: show the open issues' assignees as its crew, most issues first.
+    crew: Object.entries((cache.milestoneIssues ?? []).filter((i) => i.state === "OPEN").flatMap((i) => i.assignees ?? [])
+      .reduce((n, a) => ({ ...n, [a]: (n[a] ?? 0) + 1 }), {})).sort((a, b) => b[1] - a[1]).map(([a]) => a) });
   return {
     main,
     side: (cache.issues ?? []).map(issueJob),
@@ -306,7 +310,10 @@ export default class Jobs extends View {
 
   card(t, repo, job, sel, tracked) {
     const on = same(job, sel);
-    return h_flex().id(`job-${job.kind}-${job.number}`).relative().h(46).flex_none().pl(8).pr(8).gap(8).items_center().rounded(0)
+    const ms = job.kind === "milestone" ? msInfo(job.ms) : null;
+    const tall = Boolean(ms) || Boolean(job.tags?.length);
+    return h_flex().id(`job-${job.kind}-${job.number}`).relative().when(!tall, (el) => el.h(46).items_center()).when(tall, (el) => el.py(7).items_start()) // tall: emblem stays at the top
+      .flex_none().pl(8).pr(8).gap(8).rounded(0)
       .border(1).border_color(on ? t.accent : t.border).cursor_pointer()
       .when(on, (el) => el.bg(t.selected)).when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click(() => setShared(selKey(repo), { kind: job.kind, number: job.number }))
@@ -318,7 +325,35 @@ export default class Jobs extends View {
         .child(h_flex().gap(6).min_w(0).font_family(MONO).text_size(9.5)
           .child(div().flex_none().text_color(t.foreground).child(job.kind === "milestone" ? `M${job.number}` : `#${job.number}`))
           .child(div().flex_none().text_color(t.dim).child("·"))
-          .child(div().truncate().text_color(job.risk === "VERY HIGH" ? t.blocked : t.accent).child(`RISK: ${job.risk}`))))
+          .child(div().flex_none().text_color(job.risk === "VERY HIGH" ? t.blocked : t.accent).child(`RISK: ${job.risk}`))
+          // Issues: who has it (first login, +n for the rest), or UNASSIGNED. Undefined in an old cache: nothing.
+          .when(Array.isArray(job.assignees), (el) => el
+            .child(div().flex_none().text_color(t.dim).child("·"))
+            .child(div().min_w(0).truncate().text_color(job.assignees.length ? t.foreground : t.dim)
+              .child(job.assignees.length ? `@${job.assignees[0]}${job.assignees.length > 1 ? ` +${job.assignees.length - 1}` : ""}` : "UNASSIGNED"))))
+        // Issue labels: a square in the label's GitHub color + its name; up to 3, then +n.
+        .when(Boolean(job.tags?.length), (el) => el.child(h_flex().pt(3).gap(8).min_w(0).overflow_hidden().font_family(MONO).text_size(9)
+          .children(job.tags.slice(0, 3).map((g) => h_flex().flex_none().gap(4).items_center()
+            .child(div().size(6).flex_none().bg(g.color))
+            .child(div().text_color(t.muted).child(g.name))))
+          .when(job.tags.length > 3, (r) => r.child(div().flex_none().text_color(t.dim).child(`+${job.tags.length - 3}`)))))
+        // Milestone extras: progress (closed/total), due date, the description's first line.
+        .when(Boolean(ms), (el) => el
+          .child(h_flex().pt(3).gap(6).items_center()
+            .child(h_flex().flex_1().gap(2).children(Array.from({ length: 10 }, (_, i) =>
+              div().flex_1().h(5).rounded(0).when(i < Math.round(ms.pct / 10), (b) => b.bg(t.working)).when(i >= Math.round(ms.pct / 10), (b) => b.border(1).border_color(t.border)))))
+            .child(div().flex_none().font_family(MONO).text_size(9.5).text_color(t.foreground).child(`${ms.done}/${ms.total} · ${ms.pct}%`)))
+          .child(div().truncate().font_family(MONO).text_size(9.5).text_color(ms.hot ? t.blocked : t.muted).child(ms.due))
+          // Owner line: who created it (the only person GitHub records), then the crew.
+          .child(h_flex().gap(6).min_w(0).font_family(MONO).text_size(9.5)
+            .when(Boolean(job.ms.creator), (r) => r.child(div().flex_none().text_color(t.dim).child("BY"))
+              .child(div().flex_none().text_color(t.foreground).child(`@${job.ms.creator}`)))
+            .child(div().flex_none().text_color(t.dim).child("CREW"))
+            .child(div().min_w(0).truncate().text_color(job.crew.length ? t.foreground : t.dim)
+              .child(job.crew.length ? job.crew.slice(0, 2).map((a) => `@${a}`).join(" ") + (job.crew.length > 2 ? ` +${job.crew.length - 2}` : "") : "NONE")))
+          // ponytail: up to DESC_LINES source lines, each cut to one row (gpui has no line_clamp).
+          .child(v_flex().pt(2).gap(1).children(plain(job.ms.description).split("\n").map((l) => l.trim()).filter(Boolean).slice(0, DESC_LINES)
+            .map((l) => div().truncate().text_size(11).text_color(t.muted).child(l))))))
       .when(same(job, tracked), (el) => el.child(this.trackIcon(t)));
   }
 

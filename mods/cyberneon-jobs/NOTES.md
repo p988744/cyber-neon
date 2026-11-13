@@ -74,3 +74,13 @@ Third panel button `jobs` (`mods/cyberneon-tabs/jobs.svg`, a square target drawn
   was set to 680px with `layout.resize`, then put back to 368px.
 - Not seen live: card clicks, TRACK/BACK clicks, section toggles, `DECRYPTING…` for an issue body (no pointer control;
   this repo's only issue job wasn't selected).
+
+## Milestone card extras
+- The milestone main job card adds a 10-segment progress bar (`closed/total · pct%` from the milestones API's own counts, not the 50-issue list), `DUE <date> · ND LEFT / TODAY / OVERDUE ND` (red when ≤3 days with open issues), and up to 5 description lines (DESC_LINES). Logic in `msInfo()` (rules.js), checked in rules.check.mjs.
+
+## Issue cards: assignees and labels
+- Second line ends with `@login +n` or `UNASSIGNED` (`assignees` from `gh issue list`).
+- Labels: third row, up to 3, each a square in the label's GitHub color (`#` + `color`) plus its name; `+n` after. Cards without labels keep 46px.
+
+## Milestone owner
+- GitHub milestones can't be assigned. The card shows `BY @creator` (milestones API `creator.login`) and `CREW` = open milestone issues' assignees, most issues first, 2 shown then `+n`.
