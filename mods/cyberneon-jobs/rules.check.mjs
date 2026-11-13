@@ -62,15 +62,20 @@ assert.equal(branchMilestone("issue-1-x"), null);
 assert.equal(branchIssue("milestone-1-v0-3-polish"), null);
 console.log("milestone branch ok");
 
-// merged into the milestone branch
-import { mergedIssues } from "./rules.js";
-const ml = mergedIssues(`Merge #4: explain JACK IN in the README
-Docs: explain JACK IN and DEPLOY AGENT in the README
-Merge branch 'issue-2-check-graph' into milestone-1
-Fix GRAPH scroll
+// open PRs per issue
+import { issuePRs } from "./rules.js";
+const pm = issuePRs([{ number: 12, headRefName: "issue-4-docs" }, { number: 9, headRefName: "issue-4-old", isDraft: true }, { number: 13, headRefName: "main" }, { number: 14, headRefName: "7-fix" }]);
+assert.deepEqual(pm.get(4), { number: 9, draft: true });
+assert.deepEqual(pm.get(7), { number: 14, draft: false });
+assert.equal(pm.size, 2);
+console.log("issuePRs ok");
 
-Closes #7, fixes #8
-see #9 for context`);
-assert.deepEqual([...ml].sort((a, b) => a - b), [2, 4, 7, 8]);
-assert.equal(mergedIssues("").size, 0);
-console.log("mergedIssues ok");
+// yolo flags
+import { yoloArgv } from "./rules.js";
+assert.deepEqual(yoloArgv(["claude"]), ["claude", "--dangerously-skip-permissions"]);
+assert.deepEqual(yoloArgv(["codex", "--no-daemon"]), ["codex", "--no-daemon", "--dangerously-bypass-approvals-and-sandbox"]);
+assert.deepEqual(yoloArgv(["/opt/bin/omp"]), ["/opt/bin/omp", "--auto-approve"]);
+assert.deepEqual(yoloArgv(["claude", "--dangerously-skip-permissions"]), ["claude", "--dangerously-skip-permissions"]);
+assert.equal(yoloArgv(["pi"]), null);
+assert.equal(yoloArgv(undefined), null);
+console.log("yolo ok");

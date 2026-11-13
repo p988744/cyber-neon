@@ -75,15 +75,25 @@ export const milestoneBranch = (n, title) => (slug(title) ? `milestone-${n}-${sl
 export const branchMilestone = (b) => Number(String(b ?? "").match(/(?:^|\/)milestone-(\d+)(?:-|$)/)?.[1]) || null;
 export const branchIssue = (b) => Number(String(b ?? "").match(/(?:^|\/)(?:issue-)?(\d+)(?:-|$)/)?.[1]) || null;
 
-// Issues already merged into a milestone branch, from `git log <milestone> ^<default>` messages: a merge line naming
-// `#n` or `issue-n-…`, or a closing keyword (`Closes #n`, `Fixes #n`, `Resolves #n`; GitHub's own set).
-// ponytail: messages only; a squash or rebase with neither leaves the issue unmarked.
-export function mergedIssues(log) {
-  const out = new Set();
-  for (const line of String(log ?? "").split("\n")) {
-    const m = line.match(/^\s*Merge\b.*?(?:#|issue-)(\d+)\b/i);
-    if (m) out.add(Number(m[1]));
-    for (const k of line.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi)) out.add(Number(k[1]));
+// Open PRs per issue: an open PR whose head branch is `issue-<n>…` or `<n>-…` is that issue's.
+// prs: [{ number, headRefName, isDraft }] → Map n → { number, draft }. The lowest PR number wins.
+export function issuePRs(prs) {
+  const out = new Map();
+  for (const p of [...(prs ?? [])].sort((a, b) => a.number - b.number)) {
+    const n = branchIssue(p.headRefName);
+    if (n && !out.has(n)) out.set(n, { number: p.number, draft: Boolean(p.isDraft) });
   }
   return out;
+}
+
+// YOLO: each agent's own "don't ask before acting" flag, keyed by its program's name (`run[0]`), from each CLI's
+// --help. null: no such flag known (e.g. pi has no approval prompts at all), so the checkbox is off.
+const YOLO = {
+  claude: "--dangerously-skip-permissions", agy: "--dangerously-skip-permissions", antigravity: "--dangerously-skip-permissions",
+  codex: "--dangerously-bypass-approvals-and-sandbox", opencode: "--auto", omp: "--auto-approve",
+  grok: "--always-approve", hermes: "--yolo", gemini: "--yolo",
+};
+export function yoloArgv(run) {
+  const flag = YOLO[String(run?.[0] ?? "").split("/").pop()];
+  return flag ? (run.includes(flag) ? [...run] : [...run, flag]) : null;
 }

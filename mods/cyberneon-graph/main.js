@@ -64,8 +64,7 @@ export default class Graph extends View {
       const [top, gitDir] = r.code === 0 ? r.stdout.trim().split("\n") : [];
       this.ctx = gitDir ? { folder, on, top, gitDir } : { folder, on, error: true };
       this.raw = null; this.view = null; this.scrollY = 0; this.details.clear();
-      if (gitDir && !on) this.watch(gitDir);
-      else this.watchGen = (this.watchGen ?? 0) + 1; // stops the old loop at its next event
+      if (gitDir && !on) this.watch(gitDir); // an old repo's loop stops at its next event (ctx no longer matches)
     }
     if (this.ctx.error) return;
     const r = await git(folder, on, ["log", this.scope === "head" ? "HEAD" : "--all", "--decorate=full", "--topo-order", "--date-order", "-n", String(N),
@@ -77,14 +76,20 @@ export default class Graph extends View {
 
   // ponytail: watches the git dir only (a linked worktree's branch refs live in the common dir; SYNC covers it).
   // Remote machines aren't watched (watchFolder is local only); SYNC refreshes them.
+  // A watch can't be cancelled, so a loop ends at the first event after its repo is no longer shown. One loop per
+  // git dir at most: coming back to a repo before that event reuses the waiting loop instead of adding another.
   watch(gitDir) {
-    const gen = (this.watchGen = (this.watchGen ?? 0) + 1);
+    this.watching ??= new Set();
+    if (this.watching.has(gitDir)) return;
+    this.watching.add(gitDir);
     this.acx.spawn(async () => {
-      for (;;) {
-        try { await watchFolder(gitDir); } catch { return; }
-        if (gen !== this.watchGen) return;
-        this.want();
-      }
+      try {
+        for (;;) {
+          await watchFolder(gitDir);
+          if (this.ctx?.gitDir !== gitDir) return;
+          this.want();
+        }
+      } catch {} finally { this.watching.delete(gitDir); }
     });
   }
 

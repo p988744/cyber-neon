@@ -151,3 +151,4 @@ Click to select, right-click menu (rename lives there), drag-to-reorder with the
 ## Worktree satellites
 - Herdr's default sidebar nests worktree spaces under their repo; the map didn't. Tried satellites (own point + dashed tether): too busy. Now they share the repo's point, with one short `↳ M1 ●1` tag line.
 - Parent by folder name only (`…/.herdr/worktrees/<repo>/…` ↔ a space with a `<repo>` segment, closest to the root). A space opened in `<repo>/mods/x` matched first before that rule. Tags are memoized on the region's base geometry (geo is rebuilt each render with the satellites).
+- Tag rings are memoized by agent states (`rings()`), apart from label placement: a state change no longer reruns the label search.

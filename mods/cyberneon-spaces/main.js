@@ -227,12 +227,15 @@ export default class Spaces extends View {
           quest ? `◆${quest.milestones}◇${quest.issues}` : ""].filter(Boolean).join(" · ");
         // Its worktree spaces on one short line: `↳ M1 ●1 · #4 ○1` (milestone-/issue- branches shortened), max 3 then +n.
         const short = (b) => { const m = String(b).match(/^(milestone|issue)-(\d+)/); return m ? (m[1] === "milestone" ? `M${m[2]}` : `#${m[2]}`) : String(b).slice(0, 10); };
-        const wts = kids.map((k) => [short(k.branch ?? k.s.name), [["▲", "blocked"], ["●", "working"], ["○", "idle"]]
+        // The worktree folder names it (a lead may have switched its checkout to an issue branch), else the branch.
+        const wts = kids.map((k) => [short(place(k.s).match(/\/\.herdr\/worktrees\/[^/]+\/([^/]+)/)?.[1] ?? k.branch ?? k.s.name), [["▲", "blocked"], ["●", "working"], ["○", "idle"]]
           .map(([g, st]) => [g, k.agents.filter((x) => norm(x.status) === st).length]).filter(([, c]) => c).map(([g, c]) => g + c).join("")].filter(Boolean).join(" "));
         const more = wts.length ? [`↳ ${wts.slice(0, 3).join(" · ")}${wts.length > 3 ? ` +${wts.length - 3}` : ""}`] : [];
         return { id: p.id, x: p.x, y: p.y, r: s.active ? 12 : 9, num: nums[p.id], name: s.name, sub, more, states: a.map((x) => norm(x.status)), blocked: count("blocked") > 0, active: Boolean(s.active) };
       });
-      const lkey = JSON.stringify([geo.key, items]);
+      // Tags depend on place and text only; agent states only change the rings (memoized below), so a state
+      // change doesn't redo the label search.
+      const lkey = JSON.stringify([geo.key, items.map(({ states, ...rest }) => rest)]);
       if (geo.plates?.key !== lkey && !this.building.has(lkey)) {
         this.building.set(lkey, () => { geo.plates = this.tags(items, avail, lkey); });
         this.pump();
@@ -255,7 +258,7 @@ export default class Spaces extends View {
             .when(Boolean(geo.roads), (e) => e.child(at(W.paint_path(geo.roads, Background.solid(t.working).opacity(0.6)))))
             .when(Boolean(geo.bridges), (e) => e.child(at(W.paint_path(geo.bridges, Background.solid(t.working).opacity(0.8))))))
           .when(Boolean(tg.leaders), (el) => el.child(at(W.paint_path(tg.leaders, t.solid))))
-          .children(geo.points.filter((p) => info[p.id]).map((p) => this.point(t, merged(p.id), p, tg.rings[p.id], anim)))
+          .children(geo.points.filter((p) => info[p.id]).map((p) => this.point(t, merged(p.id), p, this.rings(items.find((it) => it.id === p.id)), anim)))
           .children(geo.points.filter((p) => info[p.id]).map((p) => { const g = merged(p.id); return this.tag(t, g.s, tg.at[p.id], g.agents.some((a) => a.status === "blocked"), g.kids); })));
     });
     return div().relative().flex_1().min_h(0).bg(SEA)
@@ -283,6 +286,26 @@ export default class Spaces extends View {
   }
 
   // The tag job: place tags, then build their paths (cut box, active border), the leaders and the agent rings.
+  // A point's agent ring, one arc per agent, memoized by its states (most renders change nothing).
+  rings(it) {
+    if (!it) return [];
+    this.ringMemo ??= new Map();
+    const k = it.states.join(",");
+    const hit = this.ringMemo.get(k);
+    if (hit) return hit;
+    const by = {};
+    for (const a of ring(it.states, 9, ART / 2, ART / 2)) {
+      let pb = by[a.status] ?? PathBuilder.stroke(1);
+      pb = pb.move_to(...a.pts[0]);
+      for (const q of a.pts.slice(1)) pb = pb.line_to(...q);
+      by[a.status] = pb;
+    }
+    const out = Object.entries(by).map(([status, pb]) => ({ status, path: pb.build() }));
+    if (this.ringMemo.size > 64) this.ringMemo.clear(); // ponytail: tiny cache, cleared when it grows
+    this.ringMemo.set(k, out);
+    return out;
+  }
+
   tags(items, avail, key) {
     const at = labels(items, avail);
     let lead = PathBuilder.stroke(1);
@@ -292,18 +315,7 @@ export default class Spaces extends View {
       p.fill = PathBuilder.fill().add_polygon(poly, true).build();
       p.edge = PathBuilder.stroke(1).add_polygon(poly.map(([x, y]) => [Math.min(p.w - 0.5, Math.max(0.5, x)), Math.min(p.h - 0.5, Math.max(0.5, y))]), true).build();
     }
-    const rings = {};
-    for (const it of items) {
-      const by = {};
-      for (const a of ring(it.states, 9, ART / 2, ART / 2)) {
-        let pb = by[a.status] ?? PathBuilder.stroke(1);
-        pb = pb.move_to(...a.pts[0]);
-        for (const q of a.pts.slice(1)) pb = pb.line_to(...q);
-        by[a.status] = pb;
-      }
-      rings[it.id] = Object.entries(by).map(([status, pb]) => ({ status, path: pb.build() }));
-    }
-    return { key, at, rings, leaders: Object.keys(at).length ? lead.build() : null };
+    return { key, at, leaders: Object.keys(at).length ? lead.build() : null };
   }
 
   // Terrain and built paths per region, rebuilt only when names, tab counts, machines or width change.

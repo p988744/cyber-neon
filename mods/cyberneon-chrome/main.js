@@ -105,7 +105,7 @@ export default class WorkspaceChrome extends View {
       .when(!collapsed, el => el.child(v_flex().flex_1().min_w(0).overflow_hidden()
         .child(h_flex().gap(6).items_end()
           .child(this.wordmark())
-          .child(div().flex_none().font_family("Share Tech Mono").text_size(10).pb(3).text_color(t.dim).child("v0.3"))
+          .child(div().flex_none().font_family("Share Tech Mono").text_size(10).pb(3).text_color(t.dim).child("v0.4"))
           .child(h_flex().flex_none().h(10).mb(4).children(BARS.map(([b, g]) => div().w(b).mr(g).h_full().bg(t.dim)))))
         .child(div().font_family("Share Tech Mono").text_size(9).text_color(t.dim).opacity(0.7).truncate()
           .child(`SYS//0x7F3A  NODE//${machines().length}`))))

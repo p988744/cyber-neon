@@ -48,3 +48,4 @@
     `CHIP` (96px) with a truncated name, and the chip group clips only as a last resort (subject keeps 40px).
 - Demo-window pitfall: a Herdr window that is covered by other windows stops drawing, so `herdr-app shot` returns
   the last frame (check the status-bar clock). Raising it steals the person's focus, so ask first.
+- Watch loops: watchFolder can't be cancelled, so a loop ends at the first event after its repo stops being shown; at most one loop per git dir (`this.watching`), so switching back and forth no longer stacks loops.

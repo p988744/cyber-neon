@@ -95,3 +95,12 @@ Third panel button `jobs` (`mods/cyberneon-tabs/jobs.svg`, a square target drawn
 - terminal.keep (tested): a new tab in the parent's space, named after the terminal; parent kept; the agents list nests it under the parent; it TAKES FOCUS (no option against it), so the lead must not keep its own sub-agents.
 - Tried first: issues as `hc run --bg` subagents (label `cyberneon.issue`, `hc send --if idle` loop). Dropped: a parentless one is hidden, and one issue deserves a visible tab. tab.new takes `task`, so no send loop is needed.
 - Agent choice is a dropdown (not chips).
+
+## One issue, one PR (replaces the milestone integration branch)
+- First design merged issue branches into `milestone-<n>` and opened one big PR at the end. Too big to review. Now each issue branches off the default branch and opens its own PR with `Closes #<n>`; the lead only coordinates and never merges.
+- Dependencies: a dependent issue starts after the PR it needs is merged (by the person). The lead says which PR unblocks what.
+- `MERGED → M<n>` (git log of the milestone branch) is gone; issue cards show `PR #<n>` from one `gh pr list --state open` per fetch (`issuePRs()`).
+- The `milestone-<n>` worktree stays only as the lead's home, so the map and agents list group its agents.
+
+## BRIEFING as markdown
+- `TextView.markdown(id, body)` from gpui-base, wrapped in a div with the theme's size and color (it inherits them). Replaced the regex `plain()` strip, which mangled `<n>` (read as an HTML tag) and flattened lists, code and links. `plain()` stays for the milestone card's 5 description lines.

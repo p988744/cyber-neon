@@ -1,7 +1,7 @@
 import { View, div, PathBuilder } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { h_flex, v_flex, TextView } from "gpui-base";
 import { props, panes, spaces, agents, terminals, knownAgents, exec, shared, setShared, theme, run } from "herdr";
-import { tasks, prObjectives, prRisk, issueRisk, milestoneRisk, msInfo, plain, issueBranch, branchIssue, milestoneBranch, branchMilestone, mergedIssues } from "./rules.js";
+import { tasks, prObjectives, prRisk, issueRisk, milestoneRisk, msInfo, plain, issueBranch, branchIssue, milestoneBranch, branchMilestone, issuePRs, yoloArgv } from "./rules.js";
 
 // Quest tracker driven by GitHub, read-only through `gh`. Two copies (role "hud" floats over
 // `main`, role "journal" sits in the panel); both read one shared cache, one fetch runs at a time.
@@ -19,6 +19,7 @@ const cacheKey = (repo) => `cyberneon.jobs.cache.${repo}`;
 // in the issue's worktree, with the issue as its first message. Fallback when the list can't be read:
 const DEPLOY_ARGV = ["claude"];
 const AGENT_PICK = "cyberneon.jobs.agent"; // the picked agent's key, remembered across repos
+const YOLO_ON = "cyberneon.jobs.yolo"; // the YOLO checkbox: start the agent with its skip-permission flag
 const sleep = (sec) => exec("sleep", [String(sec)]).catch(() => null); // mods have no setTimeout
 const WORD = { working: "EXEC", blocked: "INPUT REQ", done: "COMPLETE", idle: "IDLE" };
 const DESC_LINES = 5; // milestone card: description lines shown
@@ -68,7 +69,8 @@ async function fetchAll(repo, branch, folder, on) {
     pr = { number: p.number, title: p.title, url: p.url, state: p.state, isDraft: p.isDraft, reviewDecision: p.reviewDecision,
       body: p.body ?? "", objectives: prObjectives(p) };
   } else if (!/no (open )?pull requests? found/i.test(prRes.stderr)) throw new Error(reason(prRes));
-  const issues = (await json(["issue", "list", "--assignee", "@me", "--state", "open", "--json", "number,title,url,milestone,labels,createdAt,assignees", "--limit", "50"], folder, on)).map(issueOf);
+  // Side jobs: open issues with no milestone (anyone's).
+  const issues = (await json(["issue", "list", "--search", "no:milestone", "--state", "open", "--json", "number,title,url,milestone,labels,createdAt,assignees", "--limit", "50"], folder, on)).map(issueOf);
   const milestones = (await json(["api", `repos/${repo}/milestones?state=open`], folder, on))
     .map((m) => ({ number: m.number, title: m.title, url: m.html_url, due_on: m.due_on, open_issues: m.open_issues, closed_issues: m.closed_issues, creator: m.creator?.login ?? null, description: m.description ?? "" }));
   const picked = shared(pickKey(repo));
@@ -76,15 +78,17 @@ async function fetchAll(repo, branch, folder, on) {
   const milestoneIssues = ms
     ? (await json(["issue", "list", "--milestone", ms.title, "--state", "all", "--json", "number,title,state,url,labels,createdAt,assignees", "--limit", "50"], folder, on)).map(issueOf)
     : [];
-  return { at: Date.now(), branch, milestone: ms?.number ?? null, pr, issues, milestones, milestoneIssues };
+  // Open PRs, to mark issues waiting on review (`PR #12`). Read-only like the rest.
+  const prs = await json(["pr", "list", "--state", "open", "--json", "number,headRefName,isDraft", "--limit", "100"], folder, on).catch(() => []);
+  return { at: Date.now(), branch, milestone: ms?.number ?? null, pr, issues, milestones, milestoneIssues, prs };
 }
 
-// Jobs per section. GIGS = open milestone issues not in SIDE JOBS.
-// ponytail: "mine" = the 50 assigned issues we fetched; a 51st assigned issue would show as a gig.
+// Jobs per section. MAIN JOBS = the branch's PR, the selected milestone and every open issue in it (main quests,
+// anyone's). SIDE JOBS = open issues with no milestone. Issues in other milestones show when you pick that milestone.
 function sections(cache) {
   const ms = cache.milestones?.find((m) => m.number === cache.milestone);
-  const mine = new Set((cache.issues ?? []).map((i) => i.number));
-  const issueJob = (i) => ({ kind: "issue", number: i.number, title: i.title, url: i.url, code: "IS", glyph: "open", risk: issueRisk(i), assignees: i.assignees, tags: i.tags });
+  const prOf = issuePRs(cache.prs);
+  const issueJob = (i) => ({ kind: "issue", number: i.number, title: i.title, url: i.url, code: "IS", glyph: "open", risk: issueRisk(i), assignees: i.assignees, tags: i.tags, openPR: prOf.get(i.number), main: Boolean(i.milestone) || (cache.milestoneIssues ?? []).some((m) => m.number === i.number) });
   const main = [];
   const pr = cache.pr;
   if (pr) main.push({ kind: "pr", number: pr.number, title: pr.title, url: pr.url, code: "PR", pr, risk: prRisk(pr),
@@ -94,12 +98,11 @@ function sections(cache) {
     crew: Object.entries((cache.milestoneIssues ?? []).filter((i) => i.state === "OPEN").flatMap((i) => i.assignees ?? [])
       .reduce((n, a) => ({ ...n, [a]: (n[a] ?? 0) + 1 }), {})).sort((a, b) => b[1] - a[1]).map(([a]) => a) });
   return {
-    main,
-    side: (cache.issues ?? []).map(issueJob),
-    gigs: (cache.milestoneIssues ?? []).filter((i) => i.state === "OPEN" && !mine.has(i.number)).map(issueJob),
+    main: [...main, ...(cache.milestoneIssues ?? []).filter((i) => i.state === "OPEN").map(issueJob)],
+    side: (cache.issues ?? []).filter((i) => !i.milestone).map(issueJob),
   };
 }
-const findJob = (secs, ref) => ref ? [...secs.main, ...secs.side, ...secs.gigs].find((j) => same(j, ref)) ?? null : null;
+const findJob = (secs, ref) => ref ? [...secs.main, ...secs.side].find((j) => same(j, ref)) ?? null : null;
 
 export default class Jobs extends View {
   init(_props, cx) {
@@ -150,13 +153,6 @@ export default class Jobs extends View {
     const picked = shared(pickKey(repo));
     const stale = force || !cache || cache.branch !== branch || age > (cache.error ? ERR_TTL : TTL)
       || (!cache.error && picked != null && picked !== cache.milestone);
-    // Local git, every tick (cheap): issues merged into the selected milestone's branch, not yet on the default
-    // branch. ponytail: the main checkout's HEAD stands in for the default branch.
-    const sel = cache?.milestones?.find((x) => x.number === cache.milestone);
-    if (sel && this.ctx.main) {
-      const r = await exec("git", ["-C", this.ctx.main, "log", "--format=%B", milestoneBranch(sel.number, sel.title), "^HEAD"], { on, timeout: 5000 }).catch(() => ({ code: 1 }));
-      this.merged = { m: sel.number, set: r.code === 0 ? mergedIssues(r.stdout) : new Set() };
-    } else this.merged = null;
     if (!stale) return;
     if (cache?.error && !force && cache.branch === branch && age < ERR_TTL) return; // gh errors: no retry before 5 min
     const lock = shared(LOCK);
@@ -204,9 +200,14 @@ export default class Jobs extends View {
     return p ? agents().find((a) => a.pane === p.pane) ?? null : null;
   }
 
-  // A milestone's lead: the agent in a pane on its milestone-<n> branch.
+  // A milestone's lead: an agent pane on its milestone-<n> branch, or in its milestone-<n>-… worktree folder
+  // whatever branch that checkout is on now (a lead may switch it to work on an issue there).
   leadFor(n) {
-    return this.paneAgent(branchMilestone, n);
+    const byBranch = this.paneAgent(branchMilestone, n);
+    if (byBranch) return byBranch;
+    const wt = this.ctx?.wt;
+    const p = wt && panes().find((p) => p.status && p.cwd?.startsWith(`${wt}/`) && branchMilestone(p.cwd.slice(wt.length + 1).split("/")[0]) === n);
+    return p ? agents().find((a) => a.pane === p.pane) ?? null : null;
   }
 
   // The agent working on issue n: a pane on an issue-n branch, else a background terminal in an issue-n
@@ -224,6 +225,12 @@ export default class Jobs extends View {
 
   picked() {
     return (this.known ?? []).find((a) => a.key === shared(AGENT_PICK)) ?? this.known?.[0] ?? null;
+  }
+
+  // The command LAUNCH / DISPATCH run: the picked agent's `run`, plus its YOLO flag when the box is ticked.
+  argvFor() {
+    const run = this.picked()?.run ?? DEPLOY_ARGV;
+    return (shared(YOLO_ON) && yoloArgv(run)) || run;
   }
 
   // git worktree add for `branch` off `base` under the worktree root; "" when ready, else the error line.
@@ -250,46 +257,48 @@ export default class Jobs extends View {
   // the milestone, orders the issues by their dependencies, and hands them to subagents the way DISPATCH does.
   launch(job, cx) {
     const { wt, on, repo } = this.ctx;
-    const argv = this.picked()?.run ?? DEPLOY_ARGV, branch = milestoneBranch(job.number, job.title);
+    const argv = this.argvFor(), branch = milestoneBranch(job.number, job.title);
     this.act(job, cx, async () => {
       const err = await this.worktree(branch, "HEAD");
       if (err) return err;
       const task = [
-        `You lead milestone M${job.number} "${job.title}" in ${repo} (${job.url}). This worktree is its integration branch, ${branch}.`,
-        `1. Read the goal (gh api repos/${repo}/milestones/${job.number} --jq .description) and the open issues (gh issue list --milestone "${job.title}" --state open), each with gh issue view.`,
-        `2. Check what already exists before starting anything: git worktree list and hc ls --json (cwd) show issue-<n>-… worktrees and agents from earlier runs. Take those over (follow them with hc read/hc wait, merge their branches) instead of starting an issue again.`,
+        `You lead milestone M${job.number} "${job.title}" in ${repo} (${job.url}). You coordinate; you don't write the code. One issue = one branch = one PR to the default branch.`,
+        `1. Read the goal (gh api repos/${repo}/milestones/${job.number} --jq .description) and the open issues (gh issue list --milestone "${job.title}" --state open), each with gh issue view. Find the default branch: gh repo view ${repo} --json defaultBranchRef -q .defaultBranchRef.name.`,
+        `2. Check what already exists before starting anything: git worktree list, hc ls --json (cwd) and gh pr list show issue-<n>-… worktrees, agents and PRs from earlier runs. Take those over (follow them, don't restart them).`,
         `3. Work out which issues depend on which: what has to land first, what can run in parallel. Write that plan down here first.`,
-        `4. Do small or blocking ones yourself on this branch. Hand each other issue to a sub-agent of yours, in its own worktree off this branch:`,
-        `   git worktree add -b issue-<n>-<slug> ${wt}/issue-<n>-<slug> ${branch}`,
+        `4. Start each issue whose dependencies are already merged into the default branch, as a sub-agent of yours in its own worktree off the freshly fetched default branch:`,
+        `   git fetch origin && git worktree add -b issue-<n>-<slug> ${wt}/issue-<n>-<slug> origin/<default branch>`,
         `   hc run --bg --name issue-<n> --cwd ${wt}/issue-<n>-<slug> -- ${argv.join(" ")}`,
-        `   then, once hc get issue-<n> shows it idle: hc send issue-<n> "<the issue: number, title, url, what to do; commit on issue-<n>-<slug> with Closes #<n> in the message>"`,
-        `   Start them with exactly that command (${argv.join(" ")}): add no flags of your own, such as permission or sandbox bypasses. The person picked it.`,
+        `   then, once hc get issue-<n> shows it idle: hc send issue-<n> "<the issue: number, title, url, what to do. Commit with Closes #<n> in the message, push issue-<n>-<slug>, open a PR to the default branch with Closes #<n> in the body (gh pr create). Don't merge it.>"`,
+        `   Start them with exactly that command (${argv.join(" ")}): add no flags of your own. The person picked it.`,
         `   Don't give them panes (terminal.keep would pull the person's focus); they show under you in the agents list, and you get a note when one ends.`,
-        `   (<slug>: the title's ASCII words, lowercase, joined by dashes, at most 40 characters. The JOBS panel links an agent to its issue by that folder.)`,
-        `5. Follow them with hc wait and hc read. Merge each finished issue branch into ${branch}. Start dependent issues only after what they need is merged.`,
-        `6. When every issue is merged here: push ${branch} and open a PR to the default branch (gh pr create) whose body has one "Closes #<n>" line per issue, yours included. Don't close issues yourself: merging that PR closes them, and that's the person's call.`,
-        `7. End by telling the person, in your last message: merge the PR, then close milestone M${job.number} "${job.title}" (${job.url}). GitHub closes the issues but never the milestone. Don't close it yourself.`,
+        `   (<slug>: the title's ASCII words, lowercase, joined by dashes, at most 40 characters. The JOBS panel links agents and PRs to their issue by that branch.)`,
+        `5. Follow them with hc wait, hc read and gh pr view. Merging is the person's call, never yours: when a PR is ready, tell the person which PR to review, and which issues its merge unblocks. Start a dependent issue only once what it needs is merged.`,
+        `6. Don't merge PRs, close issues or close the milestone. When every issue has its PR, end with a list: each PR to review and merge, in order; then "close milestone M${job.number} \"${job.title}\" (${job.url}) once they're merged; GitHub never closes milestones".`,
       ].join("\n");
+      // Already open there (a second click, or a lead that's gone): go to that space instead of making another.
+      const open = spaces().find((sp) => (sp.machine ?? null) === (on ?? null) && (sp.folder === `${wt}/${branch}`
+        || panes().some((p) => p.cwd?.startsWith(`${wt}/${branch}`) && (sp.tabs ?? []).some((tb) => tb.id === p.tab))));
+      if (open) { run("space.select", { id: open.id }); return ""; }
       run("space.new", { folder: `${wt}/${branch}`, machine: on ?? "", tab: `M${job.number}`, argv, task });
       return "";
     });
   }
 
-  // ▶ DISPATCH (issue): a worktree on issue-<n>-<slug> (off the milestone's branch when its lead made one), then the
-  // picked agent there with the issue as its task.
+  // ▶ DISPATCH (issue): one issue, one branch, one PR. A worktree on issue-<n>-<slug> off the default branch (the
+  // main checkout's HEAD), then the picked agent there with the issue as its task: commit with Closes #<n>, push,
+  // open a PR to the default branch, don't merge it.
   // - Milestone lead running: a sub-agent of the lead (hc run --bg --parent), so the lead gets its notes and Herdr
   //   keeps the link; then terminal.keep gives it a tab in the lead's space (and focus: you clicked for it).
   // - No lead: a `#<n>` tab in the project's space (whose folder, or a pane, is the main checkout); none → a space.
   dispatch(job, cx, cache) {
     const { wt, on, repo, main } = this.ctx;
-    const argv = this.picked()?.run ?? DEPLOY_ARGV, branch = issueBranch(job.number, job.title), path = `${wt}/${branch}`;
+    const argv = this.argvFor(), branch = issueBranch(job.number, job.title), path = `${wt}/${branch}`;
     const m = cache?.milestones?.find((x) => x.number === cache.milestone), lead = m ? this.leadFor(m.number) : null;
     this.act(job, cx, async () => {
-      const mb = m ? milestoneBranch(m.number, m.title) : null;
-      const base = mb && (await exec("git", ["-C", main, "show-ref", "--verify", "--quiet", `refs/heads/${mb}`], { on }).catch(() => ({ code: 1 }))).code === 0 ? mb : "HEAD";
-      const err = await this.worktree(branch, base);
+      const err = await this.worktree(branch, "HEAD");
       if (err) return err;
-      const task = `Work on GitHub issue #${job.number} in ${repo}: ${job.title}\n${job.url}\nRead it with \`gh issue view ${job.number}\`, implement it on this branch (${branch}), and commit with \`Closes #${job.number}\` in the message.`;
+      const task = `Work on GitHub issue #${job.number} in ${repo}: ${job.title}\n${job.url}\nRead it with \`gh issue view ${job.number}\`. Implement it on this branch (${branch}) and commit with \`Closes #${job.number}\` in the message. Then push the branch and open a PR to the default branch (gh pr create) with \`Closes #${job.number}\` in the body. Don't merge it: reviewing and merging is the person's call.`;
       if (!lead) {
         const home = spaces().find((sp) => (sp.machine ?? null) === (on ?? null) && (sp.folder === main
           || panes().some((p) => p.cwd === main && (sp.tabs ?? []).some((tb) => tb.id === p.tab))));
@@ -381,7 +390,7 @@ export default class Jobs extends View {
     const mi = cache.milestoneIssues ?? [];
     const head = job.kind === "milestone"
       ? { tag: "MILESTONE", id: `${mi.filter((i) => i.state === "CLOSED").length}/${mi.length}` }
-      : { tag: job.kind === "pr" ? "JOB" : "SIDE JOB", id: `#${job.number}` };
+      : { tag: job.kind === "pr" ? "JOB" : job.main ? "MAIN JOB" : "SIDE JOB", id: `#${job.number}` };
     this.watch(list);
     const open = list.filter((o) => o.state !== "done" || this.flick.has(o.key));
     // Minimized: one line, click to expand.
@@ -471,9 +480,9 @@ export default class Jobs extends View {
           // Every issue closed, the milestone still open: GitHub never closes milestones, so say it's ready to close.
           .when(Boolean(ms) && ms.total > 0 && ms.done === ms.total, (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
             .child(div().flex_none().text_color(t.done).child(`ALL DONE → CLOSE M${job.number}`)))
-          // Done on the milestone branch, still open on GitHub: merging the milestone's PR closes it.
-          .when(job.kind === "issue" && Boolean(this.merged?.set.has(job.number)), (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
-            .child(div().flex_none().text_color(t.done).child(`MERGED → M${this.merged.m}`)))
+          // An open PR from its branch: waiting on your review (draft: still in progress).
+          .when(Boolean(job.openPR), (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
+            .child(div().flex_none().text_color(job.openPR.draft ? t.muted : t.done).child(`PR #${job.openPR.number}${job.openPR.draft ? " DRAFT" : ""}`)))
           // An agent on it: its state word in the state color.
           .when(Boolean(ag), (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
             .child(div().flex_none().text_color(t[ag.status] ?? t.foreground).child(`▶ ${WORD[ag.status] ?? String(ag.status).toUpperCase()}`))))
@@ -511,7 +520,11 @@ export default class Jobs extends View {
   group(t, repo, key, title, jobs, sel, tracked, extra = [], none = "NONE") {
     const out = [this.bar(t, key, title, jobs.length)];
     if (this.closed[key]) return out;
-    out.push(...jobs.slice(0, MAX).map((j) => this.card(t, repo, j, sel, tracked)));
+    // `extra` (the milestone picker) goes right under the milestone card, before its issues; else at the end.
+    const cards = jobs.slice(0, MAX).map((j) => this.card(t, repo, j, sel, tracked));
+    const at = jobs.slice(0, MAX).findIndex((j) => j.kind === "milestone");
+    if (at >= 0 && extra.length) { cards.splice(at + 1, 0, ...extra); extra = []; }
+    out.push(...cards);
     if (jobs.length > MAX) out.push(div().id(`more-${key}`).h(18).px(4).cursor_pointer().font_family(MONO).text_size(10).text_color(t.dim)
       .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => this.open(`https://github.com/${repo}/issues`, cx)).child(`+${jobs.length - MAX} MORE`));
     if (!jobs.length) out.push(this.empty(t, none));
@@ -545,7 +558,7 @@ export default class Jobs extends View {
     this.wantBody(repo, job);
     const b = job.kind === "issue" ? shared(bodyKey(repo, job.number)) : null;
     const body = job.kind === "pr" ? job.pr.body : job.kind === "milestone" ? job.ms.description : b?.body;
-    const lines = body == null ? [] : plain(body).split("\n");
+    const md = body == null ? null : String(body).replace(/<!--[\s\S]*?-->/g, "").trim(); // template comments out
     const label = (text) => div().flex_none().pt(4).font_family(MONO).text_size(9).text_color(t.dim).child(text);
     const corner = (el) => el.absolute().size(8).border_color(t.accent);
     return v_flex().id("details").relative().flex_1().min_w(0).min_h(0).px(12).py(10).gap(6)
@@ -565,8 +578,10 @@ export default class Jobs extends View {
             .when(o.state === "done", (el) => el.line_through()).child(o.text))))
         .child(label("//02 BRIEFING"))
         .when(body == null, (el) => el.child(div().font_family(MONO).text_size(11).text_color(t.dim).child(b?.error ? `NO UPLINK // ${b.error}` : "DECRYPTING…")))
-        .when(body != null && !lines.join("").trim(), (el) => el.child(div().font_family(MONO).text_size(11).text_color(t.dim).child("NO BRIEFING")))
-        .children(lines.map((l) => (l.trim() ? div().text_size(12.5).text_color(t.muted).child(l) : div().h(6)))))
+        .when(md === "", (el) => el.child(div().font_family(MONO).text_size(11).text_color(t.dim).child("NO BRIEFING")))
+        // The body as rendered markdown (lists, code, links), in the theme's text color; links open like OPEN does.
+        .when(Boolean(md), (el) => el.child(div().text_size(12.5).text_color(t.muted)
+          .child(TextView.markdown(`brief-${job.kind}-${job.number}`, md).selectable(true).on_link_click((url, cx) => this.open(url, cx))))))
       // Pinned under the scroll area, above TRACK / OPEN: the milestone's lead or the issue's agent.
       .when(job.kind !== "pr", (el) => el.child(v_flex().flex_none().gap(4).pt(6).border_t(1).border_color(t.border)
         .child(label(job.kind === "milestone" ? "//03 LEAD" : "//03 AGENT")).child(this.agentSection(t, job, cache))))
@@ -608,6 +623,12 @@ export default class Jobs extends View {
     return v_flex().gap(4)
       .child(mono(`NO ${ms ? "LEAD" : "AGENT"} // ${ms ? milestoneBranch(job.number, job.title) : issueBranch(job.number, job.title)}`, t.dim))
       .child(h_flex().gap(6).items_center().child(head)
+        // YOLO: the agent's own skip-permission flag; off and dimmed for an agent without one.
+        .child(((can, on) => h_flex().id("yolo").flex_none().h(22).px(4).gap(4).items_center()
+          .when(can, (el) => el.cursor_pointer().on_click((_e, cx) => { setShared(YOLO_ON, !on); cx.notify(); }))
+          .child(div().size(10).flex_none().border(1).border_color(on ? t.blocked : can ? t.muted : t.border).when(on, (el) => el.bg(t.blocked)))
+          .child(div().font_family(LABEL).font_weight(600).text_size(10.5).text_color(on ? t.blocked : can ? t.muted : t.border).child("YOLO")))
+          (Boolean(yoloArgv(pick?.run ?? DEPLOY_ARGV)), Boolean(shared(YOLO_ON)) && Boolean(yoloArgv(pick?.run ?? DEPLOY_ARGV))))
         .child(this.button(t, "deploy", busy ? (ms ? "LAUNCHING…" : "DISPATCHING…") : go, !busy,
           (_e, cx) => { if (!busy) (ms ? this.launch(job, cx) : this.dispatch(job, cx, cache)); })))
       .children(options)
@@ -642,13 +663,12 @@ export default class Jobs extends View {
     const tracked = this.tracked(repo, cache);
     // Wide: something is always selected (tracked, else first). Narrow: no selection = the list.
     let job = findJob(secs, shared(selKey(repo)));
-    if (!job && this.wide) job = findJob(secs, tracked) ?? [...secs.main, ...secs.side, ...secs.gigs][0] ?? null;
+    if (!job && this.wide) job = findJob(secs, tracked) ?? [...secs.main, ...secs.side][0] ?? null;
     const sel = job && { kind: job.kind, number: job.number };
 
     const list = v_flex().id("jobs-scroll").min_h(0).overflow_y_scrollbar().gap(4).pt(8).pr(this.wide ? 10 : 0)
       .children(this.group(t, repo, "main", "MAIN JOBS", secs.main, sel, tracked, this.picker(t, repo, cache), "NO PR // NO MILESTONE"))
-      .children(this.group(t, repo, "side", "SIDE JOBS", secs.side, sel, tracked, [], "NO ASSIGNED ISSUES"))
-      .children(this.group(t, repo, "gigs", "GIGS", secs.gigs, sel, tracked, [], "NO OPEN GIGS"));
+      .children(this.group(t, repo, "side", "SIDE JOBS", secs.side, sel, tracked, [], "NO ISSUES WITHOUT A MILESTONE"));
 
     if (this.wide) {
       return root.child(header).child(h_flex().flex_1().min_h(0).items_start()
