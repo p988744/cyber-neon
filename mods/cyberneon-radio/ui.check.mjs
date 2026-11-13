@@ -36,7 +36,7 @@ const host = {
   },
   localReceiver: () => ({}),
   localStations: () => ({ snapshot: () => ({ stations: [] }), refresh: async () => {} }),
-  SliderState: { new: () => ({ on() {}, release() {} }) },
+  SliderState: { new: () => ({ on() {}, release() {}, value: () => 50 }) },
   agents: () => hostAgents, terminals: () => hostTerminals,
   nextCommand: () => new Promise(() => {}),
   localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) },
@@ -382,25 +382,36 @@ for (const ending of ["shown", "dismissed", "queued-dismissal", "closed", "stop-
   assert.equal(find(radio.render(), "radio-explicit"), undefined);
 }
 
-// Exercise the actual owner init timer adapter, including background-only
-// terminals, hidden popover, persisted preference wiring and close cancellation.
-const owner = new Radio(), timers = new Map(), ownerTasks = [];
-const ownerCx = { notify() {}, timer: { every(ms, fn) { timers.set(ms, fn); } },
-  spawn(fn) { const task = fn(ownerCx); ownerTasks.push(task); } };
+// Host changes rerender the owner; no timer reads live host data. Only a
+// blocked edge arms a deadline, and stale deadline callbacks cannot survive close.
+const owner = new Radio(), timers = new Map(), deadlines = [], ownerTasks = [];
+const ownerCx = { notify() {}, timer: {
+  every(ms, fn) { timers.set(ms, fn); },
+  after(ms, fn) { deadlines.push({ ms, fn }); },
+}, spawn(fn) { const task = fn(ownerCx); ownerTasks.push(task); } };
 owner.init({}, ownerCx);
-assert.ok(timers.has(250)); assert.equal(owner.ducking.enabled, false, "new owner restores disabled preference");
+assert.deepEqual([...timers.keys()].sort(), [2000, 5000], "only station refresh/receiver heartbeat poll");
+assert.equal(owner.ducking.enabled, false, "new owner restores disabled preference");
 await owner.ducking.setEnabled(true);
 owner.engine.started = true; owner.engine.state.source = "/fixture.wav";
+let clock = Date.now(); owner.ducking.clock = () => clock;
 hostTerminals = [{ address: "vps/t3", state: "live", status: "working" }];
-timers.get(250)(ownerCx); await owner.ducking.tail;
+owner.render(ownerCx); await owner.ducking.tail;
+assert.equal(deadlines.length, 0, "idle host baseline requires no gain timer");
 hostTerminals[0].status = "blocked";
-timers.get(250)(ownerCx); await owner.ducking.tail;
+owner.render(ownerCx); await owner.ducking.tail;
+for (let i = 0; i < 8; i++) await Promise.resolve();
 assert.equal(owner.engine.state.volume, 10);
 const deadline = owner.ducking.until;
-timers.get(250)(ownerCx); await owner.ducking.tail;
-assert.equal(owner.ducking.until, deadline);
+assert.equal(deadlines.length, 1);
+owner.render(ownerCx); await owner.ducking.tail;
+assert.equal(owner.ducking.until, deadline); assert.equal(deadlines.length, 1);
 assert.equal(owner.open, false, "agent events never open the tuner");
-await owner.close(); timers.get(250)(ownerCx);
+clock = deadline; deadlines[0].fn(ownerCx); await owner.ducking.tail;
+assert.equal(owner.engine.state.volume, 50, "deadline alone restores without another host render");
+for (let i = 0; i < 8; i++) await Promise.resolve();
+assert.equal(owner.ducking.nextWake(), 0);
+await owner.close(); deadlines[0].fn(ownerCx);
 assert.equal(owner.ducking.closed, true); assert.equal(owner.ducking.until, 0);
 delete globalThis.__radioTest;
 console.log("view controls, motion switch, status placement and layout keys passed");

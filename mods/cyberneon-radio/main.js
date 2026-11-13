@@ -23,12 +23,8 @@ export default class Radio extends View {
 
     this.ducking = new Ducking(this.engine, localStorage.getItem("ducking") !== "off");
     this.tuner.setVolumeControl(this.ducking);
-    // Host snapshots include agents outside the selected space and background
-    // children. This owner-scoped timer runs while the tuner is dismissed too.
-    cx.timer.every(250, cx => {
-      if (this.tuner.closed) return;
-      cx.spawn(async cx => { await this.ducking.observe(agents(), terminals(), Date.now()); });
-    });
+    this.duckWake = 0;
+    this.duckTimerGeneration = 0;
     this.open = false;
     this.tuning = 0;
     this.tuneGeneration = 0;
@@ -57,6 +53,23 @@ export default class Radio extends View {
         const command = await nextCommand();
         this.command(command, cx);
       }
+    });
+  }
+
+  armDucking(cx) {
+    const at = this.ducking.nextWake();
+    if (at === this.duckWake) return;
+    this.duckWake = at;
+    const generation = ++this.duckTimerGeneration;
+    if (!at || this.tuner.closed) return;
+    cx.timer.after(Math.max(0, at - Date.now()), cx => {
+      if (this.tuner.closed || generation !== this.duckTimerGeneration) return;
+      this.duckWake = 0;
+      cx.spawn(async cx => {
+        await this.ducking.tick();
+        this.armDucking(cx);
+        cx.notify();
+      });
     });
   }
 
@@ -222,7 +235,14 @@ export default class Radio extends View {
       .child(this.directory.render(t));
   }
 
-  render() {
+  render(cx) {
+    // Herdr rerenders for live agents/terminals, including while the tuner is
+    // dismissed. Read those snapshots reactively; timers only service gain work.
+    if (cx && this.ducking && !this.tuner.closed) {
+      const work = this.ducking.observe(agents(), terminals());
+      if (work) cx.spawn(async cx => { await work; this.armDucking(cx); cx.notify(); });
+      else if (this.ducking.nextWake() !== this.duckWake) cx.spawn(async cx => this.armDucking(cx));
+    }
     const t = theme(), state = this.engine.snapshot();
     const name = this.tuner.on() ? this.tuner.playing?.name || "ON" : "OFF";
     const browser = this.tuner.browserOpened;

@@ -260,6 +260,13 @@ The engine, queue batching, recovery and final-close lifecycle above are unchang
 
 The optional tuner `DUCK ON/OFF` setting and host transition/timing policy are
 specified in [UI.md](UI.md#attention-ducking-12). `ducking.js` is a separate gain
-controller; engine, receiver lifecycle, source preparation and browser handoff
-retain their existing contracts. Run `ducking.check.mjs` and
+controller. `engine.setVolumePolicy({value, reset})` installs the one owner's
+synchronous gain policy: `value()` resolves the current effective level inside
+serialized volume writes and explicit Play; `reset()` invalidates temporary gain
+on acknowledged stop, definite receiver loss and EOF before replay. This hook
+performs no IPC and changes no receiver allocation/cleanup behavior. Ducking close
+detaches it before receiver cleanup. Successful volume acknowledgment clears its
+control error; unconfirmed targets remain pending in the gain controller with
+capped retry backoff. Source preparation and browser validity gates are unchanged.
+Run `ducking.check.mjs`, `ducking-lifecycle.check.mjs` and
 `ducking.integration.mjs` in addition to the tuner/View/native checks.

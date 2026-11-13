@@ -114,7 +114,7 @@ export class Tuner {
   volume(value) {
     return this.enqueue(async () => {
       this.level = Math.max(0, Math.min(100, value));
-      if (this.engine.started) await this.volumeControl.volume(this.level);
+      if (this.engine.started || this.volumeControl !== this.engine) await this.volumeControl.volume(this.level);
     });
   }
   setVolumeControl(control) { this.volumeControl = control; }
