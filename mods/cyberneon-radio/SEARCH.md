@@ -53,6 +53,9 @@ under the lock, validates the full list, and appends. It never saves a stale UI
 snapshot. Exact source URLs or matching nonempty Radio Browser IDs are duplicate
 Adds and leave the existing entry/metadata intact. Unknown extension fields in
 existing records survive. Derived `contentWarning` is computed on read, not saved.
+If valid JSON contains a number that overflows Python's floating-point range
+(for example an extension field `1e309`), Add rejects before writing and retains
+the exact original bytes. It never emits nonstandard Infinity/NaN literals.
 
 Malformed files, limits (1000 stations, 1 MiB UTF-8), and symlinked configs fail
 without replacing the user's file. Writes use a temporary file in the same

@@ -174,7 +174,7 @@ def save_station(root, station):
             station.pop("contentWarning", None)  # Derived at read time.
             values.append(station)
             validate_stations(values)
-            data = (json.dumps(values, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+            data = (json.dumps(values, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
             if len(data) > MAX_BYTES:
                 raise ValueError("Radio file exceeds 1 MiB")
             fd, temporary = tempfile.mkstemp(prefix=".radio-", dir=root)

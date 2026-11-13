@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm, mkdir, copyFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { StationStore } from "./stations.js";
+import { StationStore, parseStations } from "./stations.js";
 import { RadioSearch, directoryStation } from "./search.js";
 const exec = promisify(execFile);
 const root = await mkdtemp(join(tmpdir(), "radio-add-"));
@@ -41,6 +41,33 @@ try {
     assert.ok(search.snapshot().error);
     assert.equal(await readFile(path, "utf8"), invalid, "never overwrite malformed user edits");
   }
+  // Exact review regression: valid JS JSON overflows Python float parsing.
+  // Exercise the actual localStations adapter, preserving the original bytes.
+  const folder = join(root, "mods/cyberneon-radio");
+  await mkdir(folder, { recursive: true });
+  await copyFile(helper, join(folder, "station-files.py"));
+  globalThis.__searchStorageHost = { appHome: () => root, exec: async (program, args, options) => {
+    try { return { ...(await exec(program, args, options)), code: 0 }; }
+    catch (error) { if (typeof error.code !== "number") throw error; return { code: error.code, stdout: error.stdout, stderr: error.stderr }; }
+  } };
+  const adapter = (await readFile(new URL("station-storage.js", import.meta.url), "utf8"))
+    .replace('import { exec, appHome } from "herdr";', 'const { exec, appHome } = globalThis.__searchStorageHost;')
+    .replace('"./stations.js"', JSON.stringify(new URL("stations.js", import.meta.url).href));
+  const { localStations } = await import(`data:text/javascript;base64,${Buffer.from(adapter).toString("base64")}`);
+  const actualStore = localStations();
+  const overflow = Buffer.from('[{"name":"Manual","url":"~/Music","extra":1e309}]');
+  await writeFile(path, overflow);
+  assert.equal(parseStations(overflow.toString())[0].extra, Infinity);
+  await actualStore.refresh();
+  assert.equal(actualStore.snapshot().error, null, "overflow JSON is accepted by the actual JS reader");
+  await assert.rejects(actualStore.save(station), /Out of range float values/);
+  assert.deepEqual(await readFile(path), overflow, "rejected Add retains exact original bytes");
+  assert.equal(parseStations((await readFile(path)).toString())[0].extra, Infinity, "original remains valid for the JS parser");
+  assert.equal((await readdir(root)).some(name => name.startsWith(".radio-")), false, "no temporary write artifact remains");
+  await writeFile(path, JSON.stringify([manual]));
+  await actualStore.save(station);
+  assert.equal(actualStore.snapshot().stations.length, 2, "ordinary save still works and rejection released the lock");
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8"))[0], manual);
   await writeFile(path, JSON.stringify(Array.from({ length: 1000 }, (_, i) => ({ name: `${i}`, url: `https://example.invalid/${i}` }))));
   await assert.rejects(store.save(station), /1000/);
   let resolveOld;
@@ -69,4 +96,4 @@ try {
   assert.equal(refreshing.snapshot().stations.length, 1, "save refreshes after an older in-flight read completes");
   assert.throws(() => directoryStation({ name: "bad", url: "edl://bad" }));
   console.log("search.check ok (metadata, errors, stale responses, add, duplicates, live edits, concurrent saves, bounds)");
-} finally { await rm(root, { recursive: true, force: true }); }
+} finally { delete globalThis.__searchStorageHost; await rm(root, { recursive: true, force: true }); }
