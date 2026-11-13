@@ -1,8 +1,8 @@
-# Cyberpunk-Neon
+# Cyber-Neon
 
 A black-and-red Herdr window in the style of a near-future game HUD. A 340px sidebar holds a glitching `CYBER//NEON` wordmark, a procedural city map where every space is a diamond on an island with a yellow tag, and an agents list with chips like `EXEC`, `INPUT REQ` and `COMPLETE`. Tabs and pane headers have 45° cut corners, thin red rules and cyan data bars. A JOBS journal on the right and a floating JOB card at the top right of the terminals track the current branch's pull request, milestone and assigned issues from GitHub. The status bar reads `NET//OK ▮ machine ▮ branch ▮ N AGENTS`. Cyan means active, yellow means look at this, and bright red is kept for an agent that needs you. All motion stops with one `ANIM OFF` switch.
 
-![Cyberpunk-Neon](preview.png)
+![Cyber-Neon](preview.png)
 
 **This is an unofficial fan work and is not approved/endorsed by CD PROJEKT RED.** Inspired by Cyberpunk 2077's interface. It uses no game assets, logos or fonts, and it isn't affiliated with CD PROJEKT RED. Every shape, icon and map is drawn from code or by hand. The fonts are open (OFL).
 
@@ -10,7 +10,7 @@ A black-and-red Herdr window in the style of a near-future game HUD. A 340px sid
 
 ## What you see
 
-### Palette (`themes/Cyberpunk-Neon.json`)
+### Palette (`themes/Cyber-Neon.json`)
 
 The theme file only takes `#rrggbb`, so every semi-transparent color is either mixed into a solid hex or written as a `#rrggbbaa` string in code.
 
@@ -131,6 +131,14 @@ A stack, `panel-body`, with three pages switched by the tab bar's toggles: **Fil
 - Details: the title in Rajdhani Bold 18px (at most 54px tall), the objectives, the body as plain text at 12.5px `muted` (`DECRYPTING…` while an issue body loads, `NO BRIEFING` when it is empty), and a `TRACK` / `UNTRACK` button.
 - No GitHub remote: `NO UPLINK // not a GitHub repo` in `blocked`. A `gh` failure: `NO UPLINK // gh not logged in` (or `rate limited`, or the first line of the error).
 
+- **GRAPH page (`cyberneon-graph`, block `graph`, opened by the tab bar's fourth panel button):** the focused pane's repo as a commit graph, up to 300 commits.
+  - Header: `GRAPH // <repo> // <branch>`, then `ALL | HEAD` chips (all refs or the current branch) and `SYNC`.
+  - Rows are 24px. A lane is 12px wide: a 1.5px line per lane in the colors `accent`, `working`, `done`, `ansi5`, `ansi9`, `ansi6` in turn, with 45° joins and merges. Commits are 7px diamonds, merges hollow, and HEAD gets a 10px `accent` ring.
+  - Up to 3 ref chips (HEAD and local branches yellow with a 4px cut, the current branch with an `accent` edge, remotes dim and outlined, tags `◆ v0.1.1` in `done`), then `+n`.
+  - Then the short hash, the subject (truncates) and the author and age on the right.
+  - Hover 300ms: a scan card with the hash, author, date, parents and `n files changed, +a −d`. Click: copies the hash and shows `COPIED` for 700ms.
+  - States: `NO REPO // not a git folder`, `GIT ERROR // …`, `SCANNING…`.
+
 ### Status bar (28px, `chrome`, 1px `border` top)
 
 Share Tech Mono 11px `muted`, segments split by `▮` in `border`, 10px gaps:
@@ -189,7 +197,7 @@ Hover a space's point for 300ms and a card opens at its right. It stays open whi
 - **Pane header:** click to focus; hover for split / zoom / close.
 - **Brand:** the search button opens Herdr's own `picker`; the fold button narrows the sidebar to the rail (76px on macOS, 44px elsewhere) and back to the width it had.
 - **Footer:** Settings → `app.settings`; Add machine → `mod.open machine-add`; the ANIM chip flips every animation in the layout.
-- **Keys:** this layout adds one binding, `cmd-p` → `mod.open:cyberneon-picker`, in the `layout:Cyberpunk-Neon` section. In the picker: type to filter, ↑/↓ and Enter to go, `ctrl+d` closes the selected tab, Esc leaves. Quiet spaces fold into an `earlier: N quiet spaces ▾` row. The last rows open a new tab, or a new space on this computer or on each connected machine. Everything else is Herdr's defaults, e.g. `cmd-w` → `tab.close`, `cmd-t` → `tab.new`, `cmd-shift-p` → the palette, `ctrl-shift-l` → switch layout.
+- **Keys:** this layout adds one binding, `cmd-p` → `mod.open:cyberneon-picker`, in the `layout:Cyber-Neon` section. In the picker: type to filter, ↑/↓ and Enter to go, `ctrl+d` closes the selected tab, Esc leaves. Quiet spaces fold into an `earlier: N quiet spaces ▾` row. The last rows open a new tab, or a new space on this computer or on each connected machine. Everything else is Herdr's defaults, e.g. `cmd-w` → `tab.close`, `cmd-t` → `tab.new`, `cmd-shift-p` → the palette, `ctrl-shift-l` → switch layout.
 
 ### JOBS: tracking work on GitHub
 
@@ -222,6 +230,8 @@ The brand drops the wordmark, barcode and data line (the hazard band stays); on 
 
 ### Network and programs
 
+- **`cyberneon-graph`, local only:** `git --no-optional-locks -c core.fsmonitor=false -C <dir> log --all|HEAD --decorate=full --topo-order --date-order -n 300`, rerun when `watchFolder(<git dir>)` fires (at most once per 2s) or on `SYNC`. On hover it runs `git show --stat -1 <hash>` once per commit.
+
 Stated plainly, because a shared layout should say this before anyone installs it:
 - **`cyberneon-jobs` reads GitHub through the user's own `gh` login, read-only.** Calls, run in the repo's folder:
   - `gh pr view --json number,title,url,state,isDraft,reviewDecision,statusCheckRollup,body`
@@ -239,7 +249,7 @@ Stated plainly, because a shared layout should say this before anyone installs i
 
 Nothing writes to GitHub, and no mod reads files outside its own folder.
 
-### Layout tree (`layouts/Cyberpunk-Neon.json`)
+### Layout tree (`layouts/Cyber-Neon.json`)
 
 Cloned from Herdr's `main` 0.1.15 (`cloned_from`). Keep these node ids: shipped mods and the panel toggles find nodes by id (`sidebar`, `panel`, `panel-body`, `main`).
 
@@ -267,9 +277,9 @@ root           row · titlebar none · traffic_lights [12,16] · gradient #0a0b0
 
 Pane frame on `main`: `gap 8, radius 0, background "background", lone true, border {1, "border"}, focus {1, "working"}, header {content: {mod: "cyberneon-pane"}, height 30, position "top", reveal "always"}`.
 
-Root look keys: `theme "Cyberpunk-Neon"`, `font "JetBrains Mono"`, `font_size 14`, `ui_font "Rajdhani"`, `toast "cyberneon-toast"`.
+Root look keys: `theme "Cyber-Neon"`, `font "JetBrains Mono"`, `font_size 14`, `ui_font "Rajdhani"`, `toast "cyberneon-toast"`.
 
-`keys.json`: `{"layout:Cyberpunk-Neon": {"cmd-p": "mod.open:cyberneon-picker"}}`.
+`keys.json`: `{"layout:Cyber-Neon": {"cmd-p": "mod.open:cyberneon-picker"}}`.
 
 ### Mods
 
@@ -282,6 +292,7 @@ Every mod is `place: "none"` (only the layout places it). All but `cyberneon-job
 | `cyberneon-agents` | `agents` | `agents`; also its own sort popup (`props.sortMenu`) | chips, sections, scan card, telemetry, THREAT |
 | `cyberneon-tabs` | `tabs` | `tabs` | cut chips, decode, Jobs toggle, per-space panel memory defaulting to Jobs |
 | `cyberneon-pane` | `pane` | pane header | strip, notch, chip, data label, brackets, sweep |
+| `cyberneon-graph` | (new) | `graph` | git commit graph; lanes from `graph.js` `lanes()` (checked by `graph.check.mjs`) |
 | `cyberneon-jobs` | (new) | `job-hud` (`role: "hud"`), `jobs` (`role: "journal"`) | GitHub quest tracker; `title: "Jobs"` |
 | `cyberneon-status` | `workspace-status` | `status` | readout strip, clock |
 | `cyberneon-toast` | `toast` | root `toast` | in-game card; overlay 360×96 |
@@ -337,7 +348,7 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 ### Render and the JS engine
 
 - **The mod engine is far slower than node.** Building the map's terrain inside `render` got the view interrupted (the old frame stayed up). Builds and tag placement run as queued jobs, **one per timer tick** (`pump()`); two in one tick were cut off and left the queue stuck. Render draws the last result and memoizes geometry by [names, tab counts, width]. A failed job prints its error at the bottom of the map.
-- **`flex_shrink()` needs a number** (`flex_shrink(1)`). Without it `herdr-app check` passes (it never renders with real pane props), but the live render throws "This view could not be re-rendered". That banner is sticky: after the fix, run `herdr-app do layout.switch '{"name":"Cyberpunk-Neon"}'` and take two shots (the first can be stale). To see the real error, wrap `render` in try/catch and render `String(e.stack)` for a moment.
+- **`flex_shrink()` needs a number** (`flex_shrink(1)`). Without it `herdr-app check` passes (it never renders with real pane props), but the live render throws "This view could not be re-rendered". That banner is sticky: after the fix, run `herdr-app do layout.switch '{"name":"Cyber-Neon"}'` and take two shots (the first can be stale). To see the real error, wrap `render` in try/catch and render `String(e.stack)` for a moment.
 - **`line_height(22)` makes text vanish** (a plain number seems to be read as a multiplier). Don't pass px to `line_height`.
 - **Map jumped to the top on hover:** keep the scroll in a `ScrollHandle.new()` made in `init` and `.track_scroll()` it on `#map-scroll`. Put anything optional (the debug line) after the scroll area, so it never shifts the scroll area's place in the tree.
 - A `.truncate()` div inside a flex `overflow_hidden` parent collapsed to 0 width. Hang absolute covers directly on the truncating div.
@@ -377,6 +388,8 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 
 ### Limits
 
+- GRAPH draws its own scrolling viewport (a virtual list can't give per-row hover), so it has a 2px scroll thumb but no draggable scrollbar. At most 16 lanes are drawn. A linked worktree's branch refs live in the common git dir, which isn't watched, so use `SYNC` there.
+
 - Map: up to 12 ring arcs per space; hover card lists 12 agents, then `+n MORE`. A crowded region (20 spaces at 138-318px) stacks some tags below the map with leaders that may cross.
 - Journal: 30 cards per section; side jobs capped at 50 by the query; milestone issues at 50.
 - HUD: 3 objectives, 200-300px wide.
@@ -402,7 +415,7 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 
 ## Done when
 
-1. `herdr-app check` passes for each of the 11 `cyberneon-*` mods, and `herdr-app do layout.switch '{"name":"Cyberpunk-Neon"}'` shows the window with no `*.error` and no "could not be re-rendered" banner.
+1. `herdr-app check` passes for each of the 11 `cyberneon-*` mods, and `herdr-app do layout.switch '{"name":"Cyber-Neon"}'` shows the window with no `*.error` and no "could not be re-rendered" banner.
 2. After switching away and back once, the wordmark reads `CYBER//NEON` in Rajdhani, the tabs in Chakra Petch and the status bar in Share Tech Mono.
 3. The sidebar is 340px: a 46px brand with the 4px yellow striped band at its bottom, the map, the agents list, a 69px footer with `ANIM ON`.
 4. With three spaces such as `atlas-site`, `api-docs` and `ledger`, the map draws one island with three diamonds, three yellow `01 ATLAS-SITE`-style tags on leaders, and a legend `01 — api-docs`, `02 — atlas-site`, `03 — ledger`. Reloading the mod draws the same island. The active space has the red ring and corner brackets.
@@ -416,3 +429,4 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 12. Right-clicking a tab opens the cut-corner `cyberneon-menu`; the tabs `+` opens `NEW // SESSION`.
 13. Clicking `ANIM ON` turns it to `ANIM OFF`: the glitch stops, bars freeze, blinks stop, and new tabs appear without decoding. Clicking again restores motion.
 14. `node mods/cyberneon-agents/telemetry.check.mjs`, `node mods/cyberneon-spaces/districts.check.mjs` and `node mods/cyberneon-jobs/rules.check.mjs` each pass.
+15. The tab bar's fourth panel button opens GRAPH. In a repo with a merge, two lanes join at 45°, HEAD has a ring and its branch chip, and `node mods/cyberneon-graph/graph.check.mjs` passes.

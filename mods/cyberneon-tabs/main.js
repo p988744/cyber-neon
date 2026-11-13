@@ -135,8 +135,8 @@ export default class Tabs extends View {
       ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
       : 10;
     const panel = find(root, "panel"), body = find(root, "panel-body");
-    // This layout always offers Jobs (cyberneon-jobs journal in panel-body).
-    const enabled = [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "jobs"])];
+    // This layout always offers Jobs and Graph (cyberneon-jobs journal, cyberneon-graph in panel-body).
+    const enabled = [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "jobs", "graph"])];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
@@ -159,6 +159,7 @@ export default class Tabs extends View {
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .child(panelButton("jobs", "Jobs", "mods/cyberneon-tabs/jobs.svg"))
+      .child(panelButton("graph", "Graph", "mods/cyberneon-tabs/graph.svg"))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/cyberneon-tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/cyberneon-tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/cyberneon-tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

@@ -1,6 +1,6 @@
 > 早期設計提案（v0，2026-11-12）。之後加入的地圖、任務日誌、掃描卡等以 `RECIPE.md` 為準。
 
-# Cyberpunk-Neon 設計提案
+# Cyber-Neon 設計提案
 
 以 Cyberpunk 2077 介面為**靈感**的 Herdr Desktop layout。只借風格，不用遊戲素材、logo 或遊戲字體。
 依據：`research/visual-language.md`（風格）、`research/materials.md`（素材）、`research/herdr-fit.md`（Herdr 能畫什麼）。
@@ -18,9 +18,9 @@
 | 切角位置 | visual：右下／herdr-fit：左上不用量尺寸，其他角要 `on_size_change` | **左上 45°** | 遊戲也用左上（對角組）；省掉每次縮放多一次 render |
 | 終端字體 | herdr-fit：Share Tech Mono／materials、visual：JetBrains Mono | **JetBrains Mono** | Share Tech Mono 只有一個字重、沒有 box-drawing 細節；它留給狀態列數字 |
 | 掃描線 | 鋪在終端背後（terminal_opacity 0.92）／只鋪 chrome | **v1 不做** | Herdr 不能畫在終端上方；鋪在背後會降低對比，且不支援圖片平鋪 |
-| 終端配色 | Scarlet Protocol（MIT）／Cyberpunk-Neon（CC-BY-SA） | **Scarlet Protocol 改兩處** | MIT 好散布；改前景與選取色 |
+| 終端配色 | Scarlet Protocol（MIT）／Cyber-Neon（CC-BY-SA） | **Scarlet Protocol 改兩處** | MIT 好散布；改前景與選取色 |
 
-## 3. 色彩（`themes/Cyberpunk-Neon.json`）
+## 3. 色彩（`themes/Cyber-Neon.json`）
 
 主題檔只收 `#rrggbb`，所以半透明色都先混到底色上算成實色。
 
@@ -126,4 +126,4 @@ root  背景漸層 #0A0B0F→#05060A，titlebar none
 1. 主色：紅為主。
 2. 動畫：預設開，附一個總開關。
 3. 第一版：v0＋v1。
-4. 名字：`Cyberpunk-Neon`，mod 前綴 `cyberneon-`。
+4. 名字：`Cyber-Neon`，mod 前綴 `cyberneon-`。

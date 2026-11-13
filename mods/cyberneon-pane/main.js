@@ -1,4 +1,4 @@
-// Cyberpunk-Neon pane header (clone of the shipped `pane`), for layouts that frame their panes:
+// Cyber-Neon pane header (clone of the shipped `pane`), for layouts that frame their panes:
 //   { "tab": "active", "pane": { "header": { "content": { "mod": "cyberneon-pane" } } } }
 // Left: 3px state strip + accent notch. Then icon, name, folder, branch. Right: state chip
 // (DESIGN.md §6) and, on hover, split/zoom/close. Props from the app: { pane, terminal }.

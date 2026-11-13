@@ -24,7 +24,7 @@ With it off, chips are static (EXEC shows `▰▱▱▱`).
 - `flex_shrink()` **needs a number** (`flex_shrink(1)`). Without it `herdr-app check` passes
   (check never renders with real pane props) but the live render throws:
   "This view could not be re-rendered".
-- That banner is sticky: after fixing, run `herdr-app do layout.switch '{"name":"Cyberpunk-Neon"}'`
+- That banner is sticky: after fixing, run `herdr-app do layout.switch '{"name":"Cyber-Neon"}'`
   to force a fresh render, and take two shots (the first can be stale).
 - To see the real error, temporarily wrap `render` in try/catch and render `String(e.stack)`.
 - Shots catch blinking chips mid-fade; shoot twice before judging.

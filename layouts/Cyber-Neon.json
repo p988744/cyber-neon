@@ -4,7 +4,7 @@
     "name": "main",
     "version": "0.1.15"
   },
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "row",
   "titlebar": "none",
   "traffic_lights": [
@@ -194,6 +194,13 @@
                           "role": "journal"
                         }
                       }
+                    },
+                    {
+                      "id": "graph",
+                      "type": "block",
+                      "content": {
+                        "mod": "cyberneon-graph"
+                      }
                     }
                   ]
                 }
@@ -214,7 +221,7 @@
       ]
     }
   ],
-  "theme": "Cyberpunk-Neon",
+  "theme": "Cyber-Neon",
   "font": "JetBrains Mono",
   "font_size": 14,
   "ui_font": "Rajdhani",
