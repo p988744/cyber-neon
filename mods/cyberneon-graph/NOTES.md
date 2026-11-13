@@ -29,7 +29,24 @@
   and `"graph"` always added to `enabled` like `"jobs"`.
 - Shot `research/v6-shots/graph.png` used a temporary `where()` override in the installed copy only (the focused pane was
   another project). **Removed**: the installed copy matches the project (`diff -r`). Panel was put back on Jobs.
-- Not seen live: the hover card, COPIED, the HEAD toggle, merges/branches (this repo is linear), scrolling (2 rows).
+- Seen live since: see "Live check (issue #2)" below.
 
 ## Fix: ref chips no longer clip
 - Chips (max 3, then `+n`) keep their width (`flex_none`); the subject truncates instead (min 40px). A tag showed as `v0.1.`.
+
+## Live check (issue #2)
+- Done in an isolated demo window (`HERDR_APP_HOME=/tmp/cne`, `HC_SESSION=demo`) on a clone of this repo with
+  6 feature branches, 2 hotfix branches, 6 merges and a tag added by `git commit-tree` (47 commits; checkout is hook-blocked).
+- No pointer automation was used. A test hook in the **installed copy only** read commands from a file and called the
+  same handlers (`arm`/`disarm`/`copy`/`setScope`/wheel), with `herdr-app shot` after each step. A real pointer that
+  happened to rest on a row also opened the card, so `on_hover` on the absolute rows works.
+- OK as built: lanes, joins, merge fan-outs, hollow merge diamonds, HEAD ring and chips match `git log --graph`. The card shows
+  left of the panel with the stat. A click copies the full hash and shows `COPIED` for 700ms. ALL/HEAD swaps the list and resets scroll.
+- Fixed:
+  - The card stayed open after the pointer left: `disarm` changed state without `cx.notify()`, and render runs only on notify.
+  - At zoom ≠ 1, the last rows couldn't be scrolled into view: `on_size_change` (and wheel deltas) are in zoomed px, while
+    `ROW` is unzoomed. At 120% the box read 662 instead of 552, so 4 rows were lost. Both are now divided by `settings().zoom`.
+  - Long remote branch names (`origin/issue-4-docs-…`) pushed the hash and subject out of the row. Each chip is now at most
+    `CHIP` (96px) with a truncated name, and the chip group clips only as a last resort (subject keeps 40px).
+- Demo-window pitfall: a Herdr window that is covered by other windows stops drawing, so `herdr-app shot` returns
+  the last frame (check the status-bar clock). Raising it steals the person's focus, so ask first.
