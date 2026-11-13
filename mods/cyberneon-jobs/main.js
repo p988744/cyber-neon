@@ -468,6 +468,9 @@ export default class Jobs extends View {
             .child(div().flex_none().text_color(t.dim).child("·"))
             .child(div().min_w(0).truncate().text_color(job.assignees.length ? t.foreground : t.dim)
               .child(job.assignees.length ? `@${job.assignees[0]}${job.assignees.length > 1 ? ` +${job.assignees.length - 1}` : ""}` : "UNASSIGNED")))
+          // Every issue closed, the milestone still open: GitHub never closes milestones, so say it's ready to close.
+          .when(Boolean(ms) && ms.total > 0 && ms.done === ms.total, (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
+            .child(div().flex_none().text_color(t.done).child(`ALL DONE → CLOSE M${job.number}`)))
           // Done on the milestone branch, still open on GitHub: merging the milestone's PR closes it.
           .when(job.kind === "issue" && Boolean(this.merged?.set.has(job.number)), (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
             .child(div().flex_none().text_color(t.done).child(`MERGED → M${this.merged.m}`)))
@@ -584,6 +587,7 @@ export default class Jobs extends View {
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(t[a.status] ?? t.foreground).child(`▶ ${WORD[a.status] ?? a.status}`))
       .child(div().flex_1().min_w(0).child(mono(`${a.space_name} / ${a.tab_name}`, t.foreground)))
       .child(this.button(t, "jack-in", "JACK IN", true, () => { if (a.peek) run("terminal.peek", { terminal: a.address }); else { run("space.select", { id: a.space }); run("pane.focus", { pane: a.pane }); } }));
+    if (ms) { const info = msInfo(job.ms); if (info.total > 0 && info.done === info.total) return mono(`ALL ISSUES CLOSED // close M${job.number} on GitHub (OPEN)`, t.done); }
     if (!this.ctx?.wt) return mono("NO AGENT // can't find this machine's home", t.dim);
     const busy = this.deploying === `${job.kind}${job.number}`;
     const pick = this.picked();
