@@ -108,8 +108,9 @@ and audible stream checks are not performed. Engine/station integration checks
 are documented in NOTES.md; their media is generated silence in temporary files.
 `tuner.integration.mjs` exercises the actual `localStations()` adapter against a
 scratch radio.json and local files, through `Tuner` and the real engine/mpv. It
-checks pre-load warning ordering, ordered folder queues, single-file replacement, mute/volume, malformed
-edits, browser-only errors and receiver reuse without reading user config.
+checks pre-load warning ordering, ordered folder queues, single-file replacement,
+mute/volume, malformed edits, browser handoff/receiver reuse, and Search/Add
+persistence without tuning or losing manual edits. It never reads user config.
 
 ## Directory search and Add (#9)
 
@@ -128,11 +129,22 @@ isolated native fixtures. The original status-bar placement is unchanged.
 
 ## Follow-on UI seams
 
-#11 can extend `Tuner.play(station)` inside the existing serialized UI queue with
-an injected browser opener, while preserving the one layout owner. Browser-open
-state should be separate from `playing` and `engine.snapshot().source`: the RADIO
-chip is the receiver's actual state, and a browser page cannot report its live
-playback/track state through this engine. Stop the receiver before a browser
-handoff and clear browser-open state on a subsequent in-app play or power-off.
+Browser-only entries (#11) use `Tuner(engine, store, openBrowser)` and the same
+serialized `play(station, beforePlay)` seam. The owner supplies `localBrowser()`;
+the pure controller retains the optional final `beforePlay` hook for power,
+choose and step. For browser stations it normalizes metadata, validates the URL,
+awaits that hook (including action-generation cancellation/native warning layout),
+then stops local playback before invoking the opener. A failed stop aborts the
+handoff. Opener failures appear in `tuner.error`; there is no mpv fallback.
+
+`browserOpened` is a normalized station representing an acknowledged handoff,
+separate from `playing` and `engine.snapshot().source`. The chip stays OFF after
+handoff; its tooltip names the browser destination, and the fixed EXPLICIT marker
+remains for an explicit browser source. The panel says OPENED IN BROWSER without
+claiming live playback or track metadata. CLEAR dismisses that notice, not the
+browser tab. Selection, in-app play, power-off and close clear the notice. Browsing
+while off never opens a browser; press OPEN for the selected browser station.
+The existing layout owner, hidden polling and final receiver close are unchanged.
+See [BROWSER.md](BROWSER.md) for helper checks and primary-source policy evidence.
 Preserve the optional `beforePlay` hook for in-app loads when extending this
 method; it belongs to the current action's async View context, not a stored one.

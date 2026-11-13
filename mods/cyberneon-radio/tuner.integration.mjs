@@ -33,7 +33,8 @@ try {
     .replace('import { exec, appHome } from "herdr";', 'const {exec,appHome} = globalThis.__stationHost;')
     .replace('"./stations.js"', JSON.stringify(new URL("stations.js", import.meta.url).href));
   const { localStations } = await import(`data:text/javascript;base64,${Buffer.from(adapter).toString("base64")}`);
-  const store = localStations(), tuner = new Tuner(engine, store);
+  const opened = [];
+  const store = localStations(), tuner = new Tuner(engine, store, async url => { opened.push(url); });
   assert.equal(store.snapshot().path, join(root, "radio.json"));
   await store.refresh();
   assert.equal(tuner.station(), null);
@@ -79,9 +80,18 @@ try {
   assert.ok(store.snapshot().error); assert.equal(tuner.stations().length, 3);
   assert.equal(tuner.playing.name, "Synthetic file");
   await tuner.choose(tuner.stations()[2]);
-  assert.match(tuner.error, /Browser-only/);
-  assert.equal(tuner.playing.name, "Synthetic file");
+  assert.equal(tuner.error, null);
+  assert.deepEqual(opened, ["https://example.invalid/"]);
+  assert.equal(tuner.playing, null);
+  assert.equal(tuner.browserOpened.name, "Synthetic browser");
+  assert.equal(engine.snapshot().source, null);
+  queue = await bridge.request(command("get", "playlist"));
+  assert.deepEqual(queue[0].data, [], "browser handoff unloads the real local queue");
   assert.equal(tokens.length, 1);
+  await tuner.power(); assert.equal(tuner.on(), false); assert.equal(tuner.browserOpened, null);
+  await tuner.choose(tuner.stations()[1]); await tuner.power();
+  assert.equal(tuner.playing.name, "Synthetic file");
+  assert.equal(tokens.length, 1, "returning from browser handoff reuses the layout receiver");
   const search = new RadioSearch({ search: async () => [{ name: "Directory fixture", url_resolved: "https://example.invalid/never-played", countrycode: "TW", codec: "MP3", bitrate: 128, lastcheckok: 1 }] }, store);
   await search.search("ambient");
   const result = search.snapshot().results[0];
@@ -106,7 +116,7 @@ try {
   assert.equal(tuner.station(), null); assert.equal(store.snapshot().error, null);
   tuner.close(); await engine.close();
   assert.equal(engine.snapshot().status, "closed");
-  console.log("tuner.integration ok (actual localStations, search/Add persistence without tuning, folders/queues, controls, edits, browser errors, one receiver)");
+  console.log("tuner.integration ok (actual localStations, Search/Add persistence without tuning, browser stop/handoff/return, queues, one receiver)");
 } finally {
   await engine.close();
   delete globalThis.__stationHost;

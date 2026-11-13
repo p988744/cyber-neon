@@ -1,8 +1,13 @@
+import { stationMetadata } from "./stations.js";
+import { browserURL } from "./browser.js";
+
 // UI state only: the station store resolves sources; the engine owns playback.
 export class Tuner {
-  constructor(engine, store) {
+  constructor(engine, store, openBrowser = null) {
     this.engine = engine;
     this.store = store;
+    this.openBrowser = openBrowser;
+    this.browserOpened = null;
     this.selected = null;
     this.playing = null;
     this.error = null;
@@ -17,8 +22,8 @@ export class Tuner {
     const list = this.stations();
     return list.find(s => this.key(s) === this.selected) ?? list[0] ?? null;
   }
-  key(s) { return JSON.stringify([s.name, s.url ?? s.open]); }
-  select(station) { this.selected = this.key(station); this.error = null; }
+  key(s) { return JSON.stringify([s.name, s.open ? "browser" : "receiver", s.open ?? s.url]); }
+  select(station) { this.selected = this.key(station); this.browserOpened = null; this.error = null; }
   on() { return Boolean(this.engine.snapshot().source); }
   enqueue(work) {
     this.pending++;
@@ -33,12 +38,34 @@ export class Tuner {
   }
   async play(station, beforePlay) {
     if (!station || this.closed) return;
+    if (station.open !== undefined) {
+      const browser = stationMetadata(station);
+      const url = browserURL(browser.open);
+      if (!this.openBrowser) throw new Error("Browser-only station: browser opener unavailable");
+      // Preserve the View's action-generation cancellation and explicit warning
+      // gate before either stopping local audio or opening an external page.
+      if (beforePlay && await beforePlay(browser) === false) return;
+      if (this.closed) return;
+      this.browserOpened = null;
+      if (this.on()) {
+        await this.engine.stop();
+        if (this.closed) return;
+        const state = this.engine.snapshot();
+        if (state.source || state.error) throw new Error(state.error || "Cannot stop local radio before browser handoff");
+      }
+      this.playing = null;
+      if (this.closed) return;
+      await this.openBrowser(url);
+      if (!this.closed) this.browserOpened = browser;
+      return;
+    }
     const prepared = await this.store.prepare(station);
     if (this.closed) return;
     // The View can present normalized station metadata before loading audio.
     if (beforePlay && await beforePlay(prepared.station) === false) return;
     // Closing during playlist resolution must not start a receiver.
     if (this.closed) return;
+    this.browserOpened = null;
     await this.engine.play(prepared.source);
     const state = this.engine.snapshot();
     const requested = Array.isArray(prepared.source) ? prepared.source[0] : prepared.source;
@@ -50,7 +77,8 @@ export class Tuner {
   }
   power(beforePlay) {
     return this.enqueue(async () => {
-      if (this.on()) await this.engine.stop();
+      if (this.on()) { this.browserOpened = null; await this.engine.stop(); }
+      else if (this.browserOpened) this.browserOpened = null;
       else await this.play(this.station(), beforePlay);
     });
   }
@@ -84,7 +112,7 @@ export class Tuner {
       if (this.engine.started) await this.engine.volume(this.level);
     });
   }
-  close() { this.closed = true; }
+  close() { this.closed = true; this.browserOpened = null; }
 }
 
 // Deterministically generated visual interference, never an audio asset.

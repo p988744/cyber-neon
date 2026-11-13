@@ -15,6 +15,25 @@ the receiver's scope. No source requests or extraction happen in this helper.
 Successful handoff only means the operating system accepted the request; browser
 playback, track titles and browser tab lifetime are outside this mod's control.
 
+The layout owner injects this opener into `Tuner(engine, store, openBrowser)`.
+Explicit power/choose/step actions still use its serialized queue. The browser
+branch validates normalized station metadata and awaits the existing final
+`beforePlay(station)` hook before stopping local audio or launching the browser.
+Dismissed actions and pending explicit warnings therefore cancel the handoff.
+Stop failure aborts it; launch failure leaves the receiver off and sets
+`tuner.error`, with no playback fallback. Successful handoff stores the station
+in `browserOpened`, clears `playing`, and leaves engine source empty. Closing
+while stop is pending prevents launch; closing after an opener request has been
+sent cannot retract that operating-system request, but cannot revive UI state.
+
+Off-state selection/next/previous only browse. OPEN launches the selected browser
+station; CLEAR removes the acknowledged handoff notice without controlling any
+external page. Selection, in-app play, power-off and close also clear the notice.
+The receiver chip remains OFF, with a browser destination in its tooltip and
+EXPLICIT when applicable. No receiver is allocated for an off-state browser
+request, including when mpv is not installed. An existing receiver is stopped and
+kept for later reuse. Ownership, hidden heartbeat and final cleanup are unchanged.
+
 ## Source policy evidence
 
 Checked 2026-11-13 against the following primary sources. These findings explain
@@ -82,3 +101,12 @@ network media, user's station config or running app is changed by this check.
 and URL implementation in a temporary native fixture via `herdr-app check`.
 It validates URL normalization/rejection and adapter construction without calling
 the browser opener. This is not an end-to-end browser playback check.
+
+`node mods/cyberneon-radio/browser-tuner.check.mjs` checks the actual controller
+and station store with an injected opener: warning gates, off browsing, source
+precedence, rejected URLs, stop/launch failures, serialization and close races.
+`ui.check.mjs` additionally exercises keyboard handoff, native-warning layout,
+dismissal generations and collapsed explicit markers using the actual View
+handlers. `render.check.mjs` includes browser-opened/collapsed native fixtures.
+`tuner.integration.mjs` stops a real mpv queue generated from silence before the
+injected browser handoff and verifies the same receiver is reused on return.
