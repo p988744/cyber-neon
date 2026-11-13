@@ -2,10 +2,13 @@
 // Native builder validation is separate: render.check.mjs uses herdr-app check.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { Ducking } from "./ducking.js";
 import { Tuner, staticFrames } from "./tuner.js";
 import { RadioSearch, SEARCH_TAGS } from "./search.js";
 import { StationStore } from "./stations.js";
 let animations = true;
+const saved = new Map();
+let hostAgents = [], hostTerminals = [];
 class Element {
   constructor() {
     this.items = []; this.calls = [];
@@ -23,6 +26,20 @@ const host = {
   Input: part, InputState: { new: () => ({ text: "", handlers: {}, on(event, fn) { this.handlers[event] = fn; }, value() { return this.text; }, set_value(text) { this.text = text; }, focus() {}, release() {} }) },
   theme: () => ({}), shared: () => animations, staticFrames, Tuner, RadioSearch, SEARCH_TAGS,
   localDirectory: () => ({ search: async () => [] }),
+  Ducking,
+  localBrowser: () => async () => {},
+  RadioEngine: class {
+    constructor() { this.started = false; this.state = { source: null, status: "idle" }; }
+    snapshot() { return { ...this.state }; }
+    async volume(value) { this.state.volume = value; }
+    async close() { this.started = false; }
+  },
+  localReceiver: () => ({}),
+  localStations: () => ({ snapshot: () => ({ stations: [] }), refresh: async () => {} }),
+  SliderState: { new: () => ({ on() {}, release() {}, value: () => 50 }) },
+  agents: () => hostAgents, terminals: () => hostTerminals,
+  nextCommand: () => new Promise(() => {}),
+  localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) },
 };
 globalThis.__radioTest = host;
 const panelSource = (await readFile(new URL("search-ui.js", import.meta.url), "utf8")).replace(/^import .+;\n/gm, "");
@@ -76,6 +93,19 @@ for (const [id, action] of [["radio-next", "next"], ["radio-prev", "prev"], ["ra
   node.calls.find(([key]) => key === "on_click")[1]({}, {});
   assert.equal(actionCalls.at(-1)[0], action);
 }
+// Toggle uses the actual controller; it stays available while tuning and
+// persists only the preference, never temporary gain or a playback action.
+view.ducking = new Ducking(engine);
+view.tuner.pending = 1;
+const duckButton = nodes().find(n => n.calls.some(([k, value]) => k === "id" && value === "radio-ducking"));
+const toggleTasks = [];
+const toggleCx = { notify() {}, spawn(fn) { toggleTasks.push(fn(toggleCx)); } };
+duckButton.calls.find(([k]) => k === "on_click")[1]({}, toggleCx);
+await Promise.all(toggleTasks);
+assert.equal(view.ducking.enabled, false);
+assert.equal(saved.get("ducking"), "off");
+assert.ok(texts().includes("DUCK OFF"));
+view.tuner.pending = 0;
 const layout = JSON.parse(await readFile(new URL("../../layouts/Cyber-Neon.json", import.meta.url), "utf8"));
 const work = layout.children.find(n => n.id === "work"), status = work.children.at(-1);
 assert.equal(status.size.px, 28);
@@ -273,7 +303,9 @@ for (const ending of ["shown", "dismissed", "queued-dismissal", "closed", "stop-
   let releaseStop;
   const stopGate = ending === "stop-dismissed" ? new Promise(resolve => { releaseStop = resolve; }) : null;
   const engine = {
+    started: true,
     snapshot: () => ({ ...current }),
+    volume: async value => { current.volume = value; },
     stop: async () => { effects.push("stop"); if (stopGate) await stopGate; current.source = null; current.status = "idle"; },
     close: async () => { current.source = null; },
   };
@@ -287,6 +319,10 @@ for (const ending of ["shown", "dismissed", "queued-dismissal", "closed", "stop-
     dismissalGeneration: 0, warning: null, warningReady: null, warningGeneration: 0, tuning: 0,
     volume: { value: () => 50, release() {} } });
   radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
+  radio.ducking = new Ducking(engine); radio.tuner.setVolumeControl(radio.ducking);
+  await radio.ducking.observe([{ address: "t1", status: "working" }], [], 1000);
+  await radio.ducking.observe([{ address: "t1", status: "blocked" }], [], 1001);
+  assert.equal(current.volume, 10, "warning/handoff tests run while ducked");
   const tasks = [];
   const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); }, timer: { after() {} } };
   const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
@@ -345,5 +381,37 @@ for (const ending of ["shown", "dismissed", "queued-dismissal", "closed", "stop-
   assert.equal(radio.tuner.browserOpened, null);
   assert.equal(find(radio.render(), "radio-explicit"), undefined);
 }
+
+// Host changes rerender the owner; no timer reads live host data. Only a
+// blocked edge arms a deadline, and stale deadline callbacks cannot survive close.
+const owner = new Radio(), timers = new Map(), deadlines = [], ownerTasks = [];
+const ownerCx = { notify() {}, timer: {
+  every(ms, fn) { timers.set(ms, fn); },
+  after(ms, fn) { deadlines.push({ ms, fn }); },
+}, spawn(fn) { const task = fn(ownerCx); ownerTasks.push(task); } };
+owner.init({}, ownerCx);
+assert.deepEqual([...timers.keys()].sort(), [2000, 5000], "only station refresh/receiver heartbeat poll");
+assert.equal(owner.ducking.enabled, false, "new owner restores disabled preference");
+await owner.ducking.setEnabled(true);
+owner.engine.started = true; owner.engine.state.source = "/fixture.wav";
+let clock = Date.now(); owner.ducking.clock = () => clock;
+hostTerminals = [{ address: "vps/t3", state: "live", status: "working" }];
+owner.render(ownerCx); await owner.ducking.tail;
+assert.equal(deadlines.length, 0, "idle host baseline requires no gain timer");
+hostTerminals[0].status = "blocked";
+owner.render(ownerCx); await owner.ducking.tail;
+for (let i = 0; i < 8; i++) await Promise.resolve();
+assert.equal(owner.engine.state.volume, 10);
+const deadline = owner.ducking.until;
+assert.equal(deadlines.length, 1);
+owner.render(ownerCx); await owner.ducking.tail;
+assert.equal(owner.ducking.until, deadline); assert.equal(deadlines.length, 1);
+assert.equal(owner.open, false, "agent events never open the tuner");
+clock = deadline; deadlines[0].fn(ownerCx); await owner.ducking.tail;
+assert.equal(owner.engine.state.volume, 50, "deadline alone restores without another host render");
+for (let i = 0; i < 8; i++) await Promise.resolve();
+assert.equal(owner.ducking.nextWake(), 0);
+await owner.close(); deadlines[0].fn(ownerCx);
+assert.equal(owner.ducking.closed, true); assert.equal(owner.ducking.until, 0);
 delete globalThis.__radioTest;
 console.log("view controls, motion switch, status placement and layout keys passed");

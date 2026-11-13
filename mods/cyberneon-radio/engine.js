@@ -12,14 +12,24 @@ export class RadioEngine {
     this.closed = false;
     this.started = false;
     this.attempted = false;
+    this.volumePolicy = null;
   }
 
   snapshot() { return { ...this.state }; }
+  // One layout owner's temporary gain policy. These synchronous callbacks do
+  // not perform IPC. Reset before replay can consume a stale attenuated level.
+  setVolumePolicy(policy) { this.volumePolicy = policy; }
+  resetVolume() {
+    if (!this.volumePolicy) return;
+    this.volumePolicy.reset();
+    this.state = { ...this.state, volume: this.volumePolicy.value() };
+  }
   async request(payload, allowUnavailable = false) {
     try { return await this.bridge.request(payload, allowUnavailable); }
     catch (error) {
       if (error instanceof ReceiverGone && !this.closed) {
         this.started = false;
+        this.resetVolume();
         this.state = { ...this.state, source: null, title: "", paused: false };
       }
       throw error;
@@ -60,9 +70,10 @@ export class RadioEngine {
           if (this.closed) return;
           this.started = true;
         }
+        const volume = this.volumePolicy ? this.volumePolicy.value() : this.state.volume;
         try {
           const queue = [...messages, command("pause", false, sources.length + 1),
-            command("volume", this.state.volume, sources.length + 2), command("mute", this.state.muted, sources.length + 3)];
+            command("volume", volume, sources.length + 2), command("mute", this.state.muted, sources.length + 3)];
           // The helper writes before it reads. Bound outstanding replies to avoid
           // duplex socket backpressure; acknowledge each batch before sending more.
           // Keep all batches within this one serialized job (no control interleaving).
@@ -74,23 +85,29 @@ export class RadioEngine {
           if (error instanceof ReceiverGone && attempt === 0 && !this.closed) continue;
           throw error;
         }
-        if (!this.closed) this.state = { ...this.state, status: "loading", source: sources[0], title: "", paused: false, error: null };
+        if (!this.closed) this.state = { ...this.state, status: "loading", source: sources[0], title: "", paused: false, volume, error: null };
         return;
       }
     });
   }
 
   control(action, value) {
-    const message = command(action, value);
+    command(action, value); // validate before enqueue
     return this.enqueue(async () => {
       if (!this.started) return; // controls never start mpv
-      await this.request(message);
+      // Resolve temporary gain inside this serialized job. A command queued
+      // before a stop/loss cannot reapply its obsolete gain after that reset.
+      const applied = action === "volume" && this.volumePolicy ? this.volumePolicy.value() : value;
+      await this.request(command(action, applied));
       if (this.closed) return;
-      if (action === "stop") this.state = { ...this.state, status: "idle", source: null, title: "", paused: false, error: null };
+      if (action === "stop") {
+        this.resetVolume();
+        this.state = { ...this.state, status: "idle", source: null, title: "", paused: false, error: null };
+      }
       if (action === "pause") this.state = { ...this.state, paused: value,
         status: this.state.source ? (value ? "paused" : "playing") : "idle" };
       if (action === "mute") this.state = { ...this.state, muted: value };
-      if (action === "volume") this.state = { ...this.state, volume: Math.max(0, Math.min(100, value)) };
+      if (action === "volume") this.state = { ...this.state, volume: Math.max(0, Math.min(100, applied)), error: null };
     });
   }
   pause(value = true) { return this.control("pause", value); }
@@ -107,9 +124,10 @@ export class RadioEngine {
       if (this.closed) return;
       const data = Object.fromEntries(replies.filter((r) => r.error === "success").map((r) => [props[r.request_id - 1], r.data]));
       const idle = data["idle-active"] === true;
+      if (idle && this.state.source) this.resetVolume();
       this.state = { ...this.state, status: idle ? "idle" : data.pause ? "paused" : "playing",
         title: idle ? "" : nowPlaying(data.metadata, data["media-title"]), source: idle ? null : this.state.source,
-        paused: data.pause ?? this.state.paused, volume: data.volume ?? this.state.volume,
+        paused: data.pause ?? this.state.paused, volume: idle && this.volumePolicy ? this.state.volume : data.volume ?? this.state.volume,
         muted: data.mute ?? this.state.muted, error: null };
     });
   }

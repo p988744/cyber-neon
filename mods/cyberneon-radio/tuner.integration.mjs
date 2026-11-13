@@ -11,6 +11,7 @@ import { Tuner } from "./tuner.js";
 import { RadioEngine } from "./engine.js";
 import { receiverClient } from "./receiver-client.js";
 import { command } from "./ipc.js";
+import { Ducking } from "./ducking.js";
 import { RadioSearch } from "./search.js";
 
 const root = await realpath(await mkdtemp(join(tmpdir(), "radio-tuner-")));
@@ -22,7 +23,9 @@ const exec = (program, args, options = {}) => new Promise((resolve, reject) =>
   }));
 const bridge = receiverClient({ exec, script: fileURLToPath(new URL("receiver.py", import.meta.url)),
   newToken: () => { const token = randomBytes(16).toString("hex"); tokens.push(token); return token; } });
-const engine = new RadioEngine(bridge);
+const engine = new RadioEngine(bridge), ducking = new Ducking(engine);
+let clock = 1000;
+const observe = status => ducking.observe([], [{ address: "fixture/t1", state: "live", status }], clock++);
 try {
   const folder = join(root, "mods/cyberneon-radio");
   await mkdir(folder, { recursive: true });
@@ -35,6 +38,8 @@ try {
   const { localStations } = await import(`data:text/javascript;base64,${Buffer.from(adapter).toString("base64")}`);
   const opened = [];
   const store = localStations(), tuner = new Tuner(engine, store, async url => { opened.push(url); });
+  tuner.setVolumeControl(ducking);
+  await observe("working");
   assert.equal(store.snapshot().path, join(root, "radio.json"));
   await store.refresh();
   assert.equal(tuner.station(), null);
@@ -79,7 +84,13 @@ try {
   await writeFile(join(root, "radio.json"), "["); await store.refresh();
   assert.ok(store.snapshot().error); assert.equal(tuner.stations().length, 3);
   assert.equal(tuner.playing.name, "Synthetic file");
+  await observe("blocked");
+  assert.ok(Math.abs((await bridge.request(command("get", "volume")))[0].data - 3.4) < 0.001);
   await tuner.choose(tuner.stations()[2]);
+  await observe("blocked");
+  assert.equal(ducking.until, 0, "browser stop cancels temporary gain");
+  assert.equal(engine.snapshot().volume, 17);
+  assert.equal(engine.snapshot().muted, true);
   assert.equal(tuner.error, null);
   assert.deepEqual(opened, ["https://example.invalid/"]);
   assert.equal(tuner.playing, null);
@@ -92,6 +103,7 @@ try {
   await tuner.choose(tuner.stations()[1]); await tuner.power();
   assert.equal(tuner.playing.name, "Synthetic file");
   assert.equal(tokens.length, 1, "returning from browser handoff reuses the layout receiver");
+  await observe("working"); await observe("blocked");
   const search = new RadioSearch({ search: async () => [{ name: "Directory fixture", url_resolved: "https://example.invalid/never-played", countrycode: "TW", codec: "MP3", bitrate: 128, lastcheckok: 1 }] }, store);
   await search.search("ambient");
   const result = search.snapshot().results[0];
@@ -111,14 +123,18 @@ try {
   assert.equal(tokens.length, 1, "Search/Add allocate no receiver");
   queue = await bridge.request(command("get", "playlist"));
   assert.deepEqual(queue[0].data.map(p => p.filename), [second]);
+  assert.ok(Math.abs(engine.snapshot().volume - 3.4) < 0.001, "Search/Add do not change duck gain");
+  await ducking.setEnabled(false);
+  assert.equal((await bridge.request(command("get", "volume")))[0].data, 17);
+  assert.equal((await bridge.request(command("get", "mute")))[0].data, true);
   await tuner.power(); assert.equal(tuner.on(), false);
   await rm(join(root, "radio.json")); await store.refresh();
   assert.equal(tuner.station(), null); assert.equal(store.snapshot().error, null);
-  tuner.close(); await engine.close();
+  tuner.close(); ducking.close(); await engine.close();
   assert.equal(engine.snapshot().status, "closed");
-  console.log("tuner.integration ok (actual localStations, Search/Add persistence without tuning, browser stop/handoff/return, queues, one receiver)");
+  console.log("tuner.integration ok (actual localStations, Search/Add persistence without tuning, ducking across Search/Add and browser stop/handoff/return, queues, one receiver)");
 } finally {
-  await engine.close();
+  ducking.close(); await engine.close();
   delete globalThis.__stationHost;
   for (const token of tokens) {
     await exec("python3", [fileURLToPath(new URL("receiver.py", import.meta.url)), "close", token]);

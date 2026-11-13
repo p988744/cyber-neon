@@ -153,3 +153,74 @@ The existing layout owner, hidden polling and final receiver close are unchanged
 See [BROWSER.md](BROWSER.md) for helper checks and primary-source policy evidence.
 Preserve the optional `beforePlay` hook for in-app loads when extending this
 method; it belongs to the current action's async View context, not a stored one.
+
+## Attention ducking (#12)
+
+`DUCK ON/OFF` beside the volume controls is usable even while a tune is pending.
+It defaults on; this mod's `localStorage.ducking` remembers `off` across owner
+recreation. It does not depend on ANIM ON/OFF. The bottom status bar stays in its
+original place and the tuner remains the only radio settings surface.
+
+Herdr's live-data rerenders supply actual `agents()` and live `terminals()`
+snapshots (including background children and remote addresses), even while the
+tuner is dismissed. These host reads are reactive, never polled. The first populated
+snapshot establishes a baseline; pre-existing blocked agents do not duck on
+startup. Later transitions into exactly `blocked` reduce radio volume to **20%
+of the chosen level for four seconds**. Unchanged blocked snapshots never
+retrigger; a new blocked transition extends the deadline to four seconds from
+that event without multiplying attenuation. Last observed statuses survive
+brief disappearance/reconnection, so a returning unchanged blocked snapshot
+also does not retrigger. Transitions coalesced between host renders can be missed.
+One-shot owner timers run only for a duck deadline or an unconfirmed gain retry;
+no periodic ducking timer runs while idle. Stale callbacks are generation-guarded.
+
+`ducking.js` owns gain intent and deadline, with no host imports or timers.
+`Tuner.setVolumeControl(control)` delegates volume writes (including after an
+explicit Play) without changing its constructor, browser opener or `beforePlay`
+hook. The slider always displays the user's intended volume; manual edits apply
+the temporary factor while ducked and become the restored level. Mute is left
+entirely to the tuner/engine. The engine's synchronous volume-policy reset cancels
+the deadline on acknowledged stop (including browser handoff), receiver loss and
+EOF before replay volume is chosen. Queue execution resolves current gain, so a
+pending old write cannot reapply attenuation after reset. Explicit replay/recovery
+uses the latest intent in its first volume command without needing another host
+render; ordinary station tuning retains ducking. Disable requests restoration
+immediately, and enable waits for a new blocked edge.
+
+A gain target remains pending until an IPC result confirms it. Error snapshots
+and thrown transport errors retry with 250ms, 500ms, 1s, then capped 2s backoff
+while the receiver is alive. A successful poll clearing an error does not discard
+that pending target. New volume/disable intent replaces the target, and loss or
+close cancels retries. Timers and retries never allocate or restart a receiver. No duck operation plays, resumes, opens
+the tuner or browser, or replaces a receiver. Dismissing the tuner keeps ducking
+active; the reviewed pending-play dismissal generation still cancels loads.
+Owner close invalidates duck work before starting immediate receiver cleanup.
+
+Checks:
+
+```sh
+node mods/cyberneon-radio/ducking.check.mjs
+node mods/cyberneon-radio/ducking-lifecycle.check.mjs
+node mods/cyberneon-radio/ducking.integration.mjs
+```
+
+The deterministic check covers host edges, initial/unchanged snapshots,
+overlap/deadlines, manual volume and mute, disable/re-enable, off, receiver loss,
+explicit recovery and queued-close cancellation. `ui.check.mjs` invokes the
+actual reactive owner render/deadline adapter against host fixtures and clicks the
+persisted toggle; its existing beforePlay/dismissal tests remain in place.
+`ducking-lifecycle.check.mjs` uses actual Tuner + RadioEngine with a simulated
+bridge: immediate Off/replay and loss/recovery without any host observation,
+browser stop/return, ordinary tuning, latest intent/mute, first replay volume,
+restore timeout followed by a successful poll and retry, capped backoff, and
+latest-target/disable/close cancellation. Native render fixtures
+validate the row with real builders. The integration check drives real mpv through
+the receiver adapter using generated temporary silence: gain, pause/mute,
+manual changes, restore, disable, guardian expiry, explicit recovery and close.
+The combined `tuner.integration.mjs` additionally runs the actual station store,
+Search/Add persistence and browser handoff while ducked, checking gain and mute
+through real mpv IPC. Browser View warning/dismissal cases (including dismissal
+while stop is pending) run with the gain delegate active. Search storage's numeric
+overflow rejection remains covered by `search.check.mjs`.
+No live layout switch/quit, user config write, bundled media, or audible stream
+check is performed.
