@@ -150,6 +150,10 @@ def validate_stations(values):
             raise ValueError("Station explicit must be boolean")
 
 
+def invalid_constant(value):
+    raise ValueError(f"Invalid JSON constant: {value}")
+
+
 def save_station(root, station):
     validate_stations([station])
     path = Path(root) / "radio.json"
@@ -160,7 +164,7 @@ def save_station(root, station):
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
             original = config_bytes(path)
-            values = json.loads(original.decode("utf-8-sig")) if original is not None else []
+            values = json.loads(original.decode("utf-8-sig"), parse_constant=invalid_constant) if original is not None else []
             validate_stations(values)
             source = station.get("open") or station.get("url")
             if any((s.get("open") or s.get("url")).strip() == source.strip() or

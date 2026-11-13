@@ -23,6 +23,7 @@ try {
   assert.equal(station.url, row.url_resolved);
   assert.equal(station.country, "TW");
   assert.equal(station.lastCheckOK, true);
+  assert.equal(directoryStation({ ...row, lastcheckok: undefined }).lastCheckOK, null, "missing last check remains unknown");
   await search.add(station);
   assert.equal(store.snapshot().stations.length, 1);
   assert.equal(search.snapshot().message, "Saved Test Radio");
@@ -34,7 +35,7 @@ try {
   assert.deepEqual(JSON.parse(await readFile(path, "utf8"))[0], manual, "save reads current disk, preserves external additions and metadata");
   await Promise.all(Array.from({ length: 8 }, (_, i) => makeStore().save({ name: `Concurrent ${i}`, url: `https://example.invalid/${i}` })));
   assert.equal(JSON.parse(await readFile(path, "utf8")).length, 10, "parallel saves never lose entries");
-  for (const invalid of ["[", '[{"name":"Incomplete"}]', "{}"] ) {
+  for (const invalid of ["[", '[{"name":"Incomplete"}]', "{}", '[{"name":"Invalid JSON","url":"~/Music","extra":NaN}]'] ) {
     await writeFile(path, invalid);
     await search.add(station);
     assert.ok(search.snapshot().error);

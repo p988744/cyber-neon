@@ -64,7 +64,8 @@ export class DirectoryPanel {
               .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(station.name))
               .child(this.button(`radio-add-${index}`, exists ? "SAVED" : state.saving === station.url ? "SAVING…" : "ADD", t, cx => this.add(station, cx), !exists && !state.saving)))
             .child(div().truncate().text_color(t.muted).child(`${station.country} · ${station.codec} / ${station.bitrate || "?"} kbps`))
-            .child(div().truncate().text_color(station.lastCheckOK ? t.done : t.blocked).child(`CHECK ${station.lastCheckOK ? "OK" : "FAILED"} · ${station.lastCheck}`));
+            .child(div().truncate().text_color(station.lastCheckOK === null ? t.muted : station.lastCheckOK ? t.done : t.blocked)
+              .child(`CHECK ${station.lastCheckOK === null ? "UNKNOWN" : station.lastCheckOK ? "OK" : "FAILED"} · ${station.lastCheck}`));
         }))));
   }
 }

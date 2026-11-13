@@ -20,7 +20,7 @@ export default class Check extends View {
       {}, {loading:true,tag:"ambient"}, {tag:"lofi",results:[]},
       {error:"Radio Browser unavailable; retry Search"},
       {results:[row]}, {results:[row],saving:row.url},
-      {results:[{...row,lastCheckOK:false}]}, {results:[row],message:"Saved Fixture Radio",saved:true}
+      {results:[{...row,lastCheckOK:false}]}, {results:[{...row,lastCheckOK:null}]}, {results:[row],message:"Saved Fixture Radio",saved:true}
     ];
     this.panels = fixtures.map((state, i) => {
       const panel = new DirectoryPanel({snapshot:()=>({stations:state.saved?[row]:[]})}, {search:async()=>[]});
@@ -29,7 +29,7 @@ export default class Check extends View {
       return panel;
     });
   }
-  render() { return v_flex().children(this.panels.map(p=>p.render(theme()))); }
+  render() { return v_flex().children(this.panels.map((p,i)=>p.render(theme()).id("fixture-"+i))); }
 }
 `);
   execFileSync("herdr-app", ["check", mod], { env: { ...process.env, HERDR_APP_HOME: root }, stdio: "inherit" });

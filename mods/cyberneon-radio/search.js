@@ -12,7 +12,8 @@ export function directoryStation(value) {
   const station = { name: text(value.name), url, explicit: false,
     radioBrowserId: text(value.stationuuid), country: text(value.country) || text(value.countrycode) || "Unknown country",
     codec: text(value.codec) || "Unknown codec", bitrate: number(value.bitrate),
-    lastCheckOK: value.lastcheckok === 1, lastCheck: text(value.lastchecktime_iso8601) || text(value.lastchecktime) || "Unknown time" };
+    lastCheckOK: value.lastcheckok === 1 ? true : value.lastcheckok === 0 ? false : null,
+    lastCheck: text(value.lastchecktime_iso8601) || text(value.lastchecktime) || "Unknown time" };
   const genre = text(value.tags);
   if (genre) station.genre = genre;
   return stationMetadata(station);
