@@ -55,6 +55,18 @@ try {
   const failed = new RadioSearch({ search: async () => { throw new Error("Offline"); } }, store);
   await failed.search("ambient");
   assert.equal(failed.snapshot().error, "Offline");
+  let releaseRead;
+  let disk = "[]", reads = 0;
+  const refreshing = new StationStore({ read: () => ++reads === 1 ? new Promise(resolve => { releaseRead = resolve; }) : Promise.resolve(disk),
+    save: async value => { disk = JSON.stringify([value]); } });
+  const staleRefresh = refreshing.refresh();
+  await Promise.resolve();
+  const saving = refreshing.save(station);
+  await Promise.resolve();
+  releaseRead("[]");
+  await staleRefresh;
+  await saving;
+  assert.equal(refreshing.snapshot().stations.length, 1, "save refreshes after an older in-flight read completes");
   assert.throws(() => directoryStation({ name: "bad", url: "edl://bad" }));
   console.log("search.check ok (metadata, errors, stale responses, add, duplicates, live edits, concurrent saves, bounds)");
 } finally { await rm(root, { recursive: true, force: true }); }
