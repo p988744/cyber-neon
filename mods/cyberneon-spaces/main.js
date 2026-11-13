@@ -5,7 +5,7 @@
 import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, Popup, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, theme, layout, agents, terminals, shared, setShared, exec } from "herdr";
-import { hash, region, labels, ring } from "./districts.js";
+import { hash, region, labels, ring, worktreeParents } from "./districts.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -188,11 +188,18 @@ export default class Spaces extends View {
     const at = (el) => el.absolute().top(0).left(0).size_full();
     const byName = (a, b) => String(a.name).localeCompare(String(b.name)) || String(a.id).localeCompare(String(b.id));
     let num = 0; // legend numbers run A-Z per region, continuing across machines
+    // Worktree spaces share their repo's point instead of getting a district (the default sidebar nests them).
+    const place = (s) => { const tb = new Set((s.tabs ?? []).map((c) => c.id)); return ps.find((p) => tb.has(p.tab) && p.cwd)?.cwd || s.folder || ""; };
+    const parentOf = worktreeParents(sp.map((s) => ({ id: s.id, place: place(s), machine: s.machine })));
     const regions = [null, ...remote].map((m, n) => {
-      const mine = sp.filter((s) => (s.machine ?? null) === m).sort(byName);
-      const nums = Object.fromEntries(mine.map((s) => [s.id, String(++num).padStart(2, "0")]));
+      const all = sp.filter((s) => (s.machine ?? null) === m).sort(byName);
+      const kidsOf = (id) => all.filter((k) => parentOf[k.id] === id);
+      // Legend order: each repo space, then its worktrees (06, 06a, 06b).
+      const mine = all.filter((s) => !parentOf[s.id]).flatMap((s) => [s, ...kidsOf(s.id)]);
+      const nums = {};
+      for (const s of mine) nums[s.id] = parentOf[s.id] ? nums[parentOf[s.id]] + "abcdefghijklmnopqrstuvwxyz"[kidsOf(parentOf[s.id]).indexOf(s)] : String(++num).padStart(2, "0");
       const off = m !== null && ms.find((k) => k.name === m)?.layout !== "ready";
-      const geo = this.geometry(m, mine, avail) ?? { points: [], height: 24, key: "pending" };
+      const geo = this.geometry(m, mine.filter((s) => !parentOf[s.id]), avail) ?? { points: [], height: 24, key: "pending" };
       const head = v_flex().pt(10).pb(2).flex_none().gap(3)
         .child(h_flex().h(18).gap(6).items_center()
           .child(div().flex_none().font_family(MONO).text_size(9).text_color(t.dim).child(`//${String(n + 1).padStart(2, "0")}`))
@@ -205,15 +212,25 @@ export default class Spaces extends View {
         const branch = ps.find((p) => tabs.has(p.tab) && p.branch)?.branch;
         return [s.id, { s, agents: list, quest: q && !q.error && (q.milestones || q.issues) ? q : null, branch }];
       }));
+      // A repo's point carries its worktree spaces: their agents join its ring and hover card, it's active when they are.
+      const merged = (id) => {
+        const kids = kidsOf(id).map((k) => info[k.id]), own = info[id];
+        return kids.length ? { ...own, s: { ...own.s, active: own.s.active || kids.some((k) => k.s.active) }, agents: [...own.agents, ...kids.flatMap((k) => k.agents)], kids } : { ...own, kids: [] };
+      };
       // Tags, rings and leaders are placed and built in a queued job (render has a time budget);
       // the last result is drawn meanwhile.
       const items = geo.points.map((p) => {
-        const { s, agents: a, quest, branch } = info[p.id];
+        const { s, agents: a, quest, branch, kids } = merged(p.id);
         const count = (st) => a.filter((x) => norm(x.status) === st).length;
         const sub = [[["▲", count("blocked")], ["●", count("working")], ["○", count("idle")]].filter(([, c]) => c).map(([g, c]) => g + c).join(" "),
           branch ? (branch.length > 12 ? branch.slice(0, 11) + "…" : branch) : "",
           quest ? `◆${quest.milestones}◇${quest.issues}` : ""].filter(Boolean).join(" · ");
-        return { id: p.id, x: p.x, y: p.y, r: s.active ? 12 : 9, num: nums[p.id], name: s.name, sub, states: a.map((x) => norm(x.status)), blocked: count("blocked") > 0, active: Boolean(s.active) };
+        // Its worktree spaces on one short line: `↳ M1 ●1 · #4 ○1` (milestone-/issue- branches shortened), max 3 then +n.
+        const short = (b) => { const m = String(b).match(/^(milestone|issue)-(\d+)/); return m ? (m[1] === "milestone" ? `M${m[2]}` : `#${m[2]}`) : String(b).slice(0, 10); };
+        const wts = kids.map((k) => [short(k.branch ?? k.s.name), [["▲", "blocked"], ["●", "working"], ["○", "idle"]]
+          .map(([g, st]) => [g, k.agents.filter((x) => norm(x.status) === st).length]).filter(([, c]) => c).map(([g, c]) => g + c).join("")].filter(Boolean).join(" "));
+        const more = wts.length ? [`↳ ${wts.slice(0, 3).join(" · ")}${wts.length > 3 ? ` +${wts.length - 3}` : ""}`] : [];
+        return { id: p.id, x: p.x, y: p.y, r: s.active ? 12 : 9, num: nums[p.id], name: s.name, sub, more, states: a.map((x) => norm(x.status)), blocked: count("blocked") > 0, active: Boolean(s.active) };
       });
       const lkey = JSON.stringify([geo.key, items]);
       if (geo.plates?.key !== lkey && !this.building.has(lkey)) {
@@ -238,8 +255,8 @@ export default class Spaces extends View {
             .when(Boolean(geo.roads), (e) => e.child(at(W.paint_path(geo.roads, Background.solid(t.working).opacity(0.6)))))
             .when(Boolean(geo.bridges), (e) => e.child(at(W.paint_path(geo.bridges, Background.solid(t.working).opacity(0.8))))))
           .when(Boolean(tg.leaders), (el) => el.child(at(W.paint_path(tg.leaders, t.solid))))
-          .children(geo.points.filter((p) => info[p.id]).map((p) => this.point(t, info[p.id], p, tg.rings[p.id], anim)))
-          .children(geo.points.filter((p) => info[p.id]).map((p) => this.tag(t, info[p.id].s, tg.at[p.id], info[p.id].agents.some((a) => a.status === "blocked")))));
+          .children(geo.points.filter((p) => info[p.id]).map((p) => this.point(t, merged(p.id), p, tg.rings[p.id], anim)))
+          .children(geo.points.filter((p) => info[p.id]).map((p) => { const g = merged(p.id); return this.tag(t, g.s, tg.at[p.id], g.agents.some((a) => a.status === "blocked"), g.kids); })));
     });
     return div().relative().flex_1().min_h(0).bg(SEA)
       .on_size_change((size, cx) => {
@@ -381,7 +398,7 @@ export default class Spaces extends View {
   }
 
   // The tag: yellow box with a 4px top-left cut (blocked: red), `NN NAME` over the details line.
-  tag(t, s, p, blocked) {
+  tag(t, s, p, blocked, kids = []) {
     if (!p) return div();
     const W = globalThis.window, ink = t.solid_foreground ?? t.canvas;
     const at = (el) => el.absolute().top(0).left(0).size_full();
@@ -392,7 +409,11 @@ export default class Spaces extends View {
       .child(at(W.paint_path(p.fill, blocked ? t.blocked : t.solid)))
       .when(Boolean(s.active), (el) => el.child(at(W.paint_path(p.edge, t.accent))))
       .child(div().h(13).whitespace_nowrap().overflow_hidden().font_family("Rajdhani").font_bold().text_size(11).text_color(ink).child(p.line1))
-      .when(Boolean(p.sub), (el) => el.child(div().h(10).whitespace_nowrap().overflow_hidden().font_family(MONO).text_size(8.5).text_color(ink).child(p.sub)));
+      .when(Boolean(p.sub), (el) => el.child(div().h(10).whitespace_nowrap().overflow_hidden().font_family(MONO).text_size(8.5).text_color(ink).child(p.sub)))
+      // Worktree lines: click one to go to that space instead of the repo's.
+      .children((p.more ?? []).map((line, i) => div().id(`tag-${s.id}-wt-${i}`).h(10).whitespace_nowrap().overflow_hidden().font_family(MONO).text_size(8.5).text_color(ink)
+        .when(kids.length === 1, (el) => el.on_click((_e, cx) => { cx.stop_propagation(); run("space.select", { id: kids[0].s.id }); }))
+        .child(line)));
   }
 
   // Every agent of the space, most urgent first, sub-agents indented under their parent.

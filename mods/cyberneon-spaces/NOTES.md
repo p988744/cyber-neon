@@ -147,3 +147,7 @@ Click to select, right-click menu (rename lives there), drag-to-reorder with the
   so the scroll position lives in the handle, not only in the element's state. The debug line now comes
   after the scroll area, so showing it can't shift the scroll area's place in the tree.
 - Not reproduced by the agent (no pointer control); the person confirmed the fix works (2026-11-13).
+
+## Worktree satellites
+- Herdr's default sidebar nests worktree spaces under their repo; the map didn't. Tried satellites (own point + dashed tether): too busy. Now they share the repo's point, with one short `↳ M1 ●1` tag line.
+- Parent by folder name only (`…/.herdr/worktrees/<repo>/…` ↔ a space with a `<repo>` segment, closest to the root). A space opened in `<repo>/mods/x` matched first before that rule. Tags are memoized on the region's base geometry (geo is rebuilt each render with the satellites).

@@ -102,6 +102,28 @@ function icon(p, size, color) {
   return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
 }
 
+// Worktree spaces read as their repo's: "herdr-gallery ↳ M1". Same rule as the map's worktreeParents()
+// (cyberneon-spaces/districts.js; mods can't import each other): a space in Herdr's ~/.herdr/worktrees/<repo>/<branch>
+// belongs to another space on that machine with a <repo> folder segment, the one closest to the repo root.
+const WT = /\/\.herdr\/worktrees\/([^/]+)\/([^/]+)/;
+const shortBranch = (b) => { const m = String(b).match(/^(milestone|issue)-(\d+)/); return m ? (m[1] === "milestone" ? `M${m[2]}` : `#${m[2]}`) : String(b).slice(0, 14); };
+function spaceNames() {
+  const sp = spaces(), ps = panes(), out = new Map();
+  const place = (s) => { const tb = new Set((s.tabs ?? []).map((c) => c.id)); return ps.find((p) => tb.has(p.tab) && p.cwd)?.cwd || s.folder || ""; };
+  for (const k of sp) {
+    const m = place(k).match(WT);
+    if (!m) continue;
+    let best = null, depth = Infinity;
+    for (const s of sp) {
+      if (s.id === k.id || (s.machine ?? null) !== (k.machine ?? null) || WT.test(place(s))) continue;
+      const seg = place(s).split("/"), at = seg.lastIndexOf(m[1]);
+      if (at >= 0 && seg.length - at < depth) { best = s; depth = seg.length - at; }
+    }
+    if (best) out.set(k.id, `${best.name} ↳ ${shortBranch(m[2])}`);
+  }
+  return out;
+}
+
 export default class Agents extends View {
   init(_props, cx) {
     if (props()?.sortMenu) return;
@@ -366,7 +388,7 @@ export default class Agents extends View {
         .child(line("STATUS", WORD[a.status] ?? String(a.status).toUpperCase(), t[a.status] ?? t.foreground))
         .when(born != null, (el) => el.child(line("UPTIME", duration(Date.now() - born))))
         .when(typeof x?.turn === "number", (el) => el.child(line("TURNS", String(x.turn))))
-        .child(line("DISTRICT", a.space_name || "?"))
+        .child(line("DISTRICT", spaceNames().get(a.space) ?? (a.space_name || "?")))
         .when(Boolean(p?.cwd), (el) => el.child(line("PATH", tail(home(p.cwd)))))
         .when(Boolean(p?.branch), (el) => el.child(line("BRANCH", p.branch)))
         .child(this.telemetrySection(t, a.address, line))
@@ -402,8 +424,21 @@ export default class Agents extends View {
     for (const a of list) tabCounts.set(a.tab, (tabCounts.get(a.tab) ?? 0) + 1);
     const byPriority = sort.id === "priority";
     const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
-    const rankOf = (a) => urgency.get(a.address);
-    if (byPriority) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
+    // A worktree space (a milestone: its lead and issue tabs) moves as one: its members share the most urgent
+    // member's rank and place, lead (an `M<n>` tab) first.
+    const names = spaceNames(), fam = (a) => (names.has(a.space) ? `wt:${a.space}` : a.address);
+    const famRank = new Map();
+    for (const a of list) famRank.set(fam(a), Math.max(famRank.get(fam(a)) ?? 0, urgency.get(a.address)));
+    const rankOf = (a) => famRank.get(fam(a));
+    if (byPriority) {
+      const sorted = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
+      const lead = (a) => (/^M\d+$/.test(a.tab_name ?? "") ? 0 : 1), done = new Set();
+      list = sorted.flatMap((a) => {
+        if (done.has(fam(a))) return [];
+        done.add(fam(a));
+        return sorted.filter((b) => fam(b) === fam(a)).sort((x, y) => lead(x) - lead(y));
+      });
+    }
     const pinned = list.filter((a) => a.pinned);
     const rest = list.filter((a) => !a.pinned);
     list = [...pinned, ...rest];
@@ -456,6 +491,7 @@ export default class Agents extends View {
       return [a.address, tab ? title(many ? { ...tab, named: false } : tab, many ? a : leads.get(a.tab)) : (a.title || a.program?.name || "")];
     }));
     const label = (a) => labels.get(a.address);
+    const spName = (a) => names.get(a.space) ?? a.space_name;
     const detail = new Map(list.map(a => [a.address, /^\d+$/.test(label(a)) ? null : label(a)]));
     const seen = {};
     for (const a of list) { const k = `${a.space_name}\u0000${detail.get(a.address) ?? ""}`; seen[k] = (seen[k] ?? 0) + 1; }
@@ -509,7 +545,7 @@ export default class Agents extends View {
       // Under a space header the space goes without saying; an automatic tab number says nothing.
       // Without a space header above (priority, pinned) the row names its space.
       const full = byPriority || isPinned;
-      const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
+      const name = full ? spName(a) || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
       return h_flex()
         .id(`ag-${a.address}`)
         .pl(7)
@@ -559,7 +595,7 @@ export default class Agents extends View {
       const r = rankOf(a) || RANK.idle;
       const id = byPriority ? `sec-${r}` : `sp-${a.space}`;
       if (groups.at(-1)?.id === id) groups.at(-1).members.push(a);
-      else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
+      else groups.push({ id, label: byPriority ? SECTION[r] : spName(a) || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
     }
 
     // A group's header; it folds the group. Folded, it says how many and the most urgent state.

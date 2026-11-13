@@ -84,3 +84,14 @@ Third panel button `jobs` (`mods/cyberneon-tabs/jobs.svg`, a square target drawn
 
 ## Milestone owner
 - GitHub milestones can't be assigned. The card shows `BY @creator` (milestones API `creator.login`) and `CREW` = open milestone issues' assignees, most issues first, 2 shown then `+n`.
+
+## Issue → agent (JACK IN / DISPATCH)
+- Link is by branch name only: `issue-<n>-…` (what deploy makes) or `<n>-…` (gh issue develop). Plus the pane's folder must be this repo's main checkout or under `~/.herdr/worktrees/<repo>/`.
+- Deploy mirrors the worktree mod's New worktree (same root and slug rules) and then `space.new` with `task`, which the worktree mod's props can't pass.
+- Agent picker: chips from `knownAgents({on})` (installed only), picked key in `cyberneon.jobs.agent`; `DEPLOY_ARGV` is only the fallback. To add flags (e.g. yolo), override that agent's `run` in Herdr's programs.json.
+
+## LAUNCH / DISPATCH (v0.3 design)
+- Milestone = a worktree space with a lead agent that plans by dependencies and starts issue sub-agents (hc run --bg, no pane). Issue DISPATCH = the lead's sub-agent given a tab with terminal.keep, or a plain tab when no lead runs.
+- terminal.keep (tested): a new tab in the parent's space, named after the terminal; parent kept; the agents list nests it under the parent; it TAKES FOCUS (no option against it), so the lead must not keep its own sub-agents.
+- Tried first: issues as `hc run --bg` subagents (label `cyberneon.issue`, `hc send --if idle` loop). Dropped: a parentless one is hidden, and one issue deserves a visible tab. tab.new takes `task`, so no send loop is needed.
+- Agent choice is a dropdown (not chips).

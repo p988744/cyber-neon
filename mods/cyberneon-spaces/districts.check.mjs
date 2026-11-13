@@ -71,3 +71,22 @@ assert.ok(rg.every((a) => a.pts.every(([x, y]) => Math.abs(Math.hypot(x, y) - 9)
 assert.equal(ring(Array(20).fill("idle"), 9).length, 12, "max 12 arcs");
 const r1 = region(spaces, 436, "This computer");
 console.log(`points/tags: ok (${far} stress-case tags stacked below, river ${r1.river ? (r1.river.vertical ? "vertical" : "horizontal") : "no"}, coast ${r1.land.length} pts, ${r1.suburbs.length} suburb blocks)`);
+
+// worktree satellites
+import { worktreeParents, labels as lab } from "./districts.js";
+const H = "/Users/u";
+assert.deepEqual(worktreeParents([
+  { id: "a", place: `${H}/code/herdr-gallery` },
+  { id: "b", place: `${H}/.herdr/worktrees/herdr-gallery/issue-4-docs` },
+  { id: "c", place: `${H}/.herdr/worktrees/other/x` },
+  { id: "d", place: `${H}/.herdr/worktrees/herdr-gallery/feat/sub`, machine: "box" },
+]), { b: "a" });
+const tg = lab([{ id: "a", x: 100, y: 100, r: 9, num: "06", name: "repo", sub: "o1 · main", more: ["06a ↳ issue-4-docs o1"] }], 300).a;
+assert.equal(tg.h, 36);
+assert.deepEqual(tg.more, ["06a ↳ issue-4-docs o1"]);
+assert.deepEqual(worktreeParents([
+  { id: "sub", place: `${H}/code/herdr-gallery/mods/research` },
+  { id: "root", place: `${H}/code/herdr-gallery` },
+  { id: "wt", place: `${H}/.herdr/worktrees/herdr-gallery/issue-4` },
+]), { wt: "root" });
+console.log("worktree folding ok");

@@ -1,7 +1,7 @@
 import { View, div, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { props, panes, spaces, exec, shared, setShared, theme, run } from "herdr";
-import { tasks, prObjectives, prRisk, issueRisk, milestoneRisk, msInfo, plain } from "./rules.js";
+import { props, panes, spaces, agents, terminals, knownAgents, exec, shared, setShared, theme, run } from "herdr";
+import { tasks, prObjectives, prRisk, issueRisk, milestoneRisk, msInfo, plain, issueBranch, branchIssue, milestoneBranch, branchMilestone, mergedIssues } from "./rules.js";
 
 // Quest tracker driven by GitHub, read-only through `gh`. Two copies (role "hud" floats over
 // `main`, role "journal" sits in the panel); both read one shared cache, one fetch runs at a time.
@@ -15,6 +15,12 @@ const HUD = "cyberneon.jobs.hud";
 const hudMode = () => shared(HUD) ?? "full";
 const anim = () => shared("cyberneon.animations") !== false;
 const cacheKey = (repo) => `cyberneon.jobs.cache.${repo}`;
+// DISPATCH starts the picked agent (Herdr's knownAgents(): programs.json entries with `run`, installed here)
+// in the issue's worktree, with the issue as its first message. Fallback when the list can't be read:
+const DEPLOY_ARGV = ["claude"];
+const AGENT_PICK = "cyberneon.jobs.agent"; // the picked agent's key, remembered across repos
+const sleep = (sec) => exec("sleep", [String(sec)]).catch(() => null); // mods have no setTimeout
+const WORD = { working: "EXEC", blocked: "INPUT REQ", done: "COMPLETE", idle: "IDLE" };
 const DESC_LINES = 5; // milestone card: description lines shown
 const pickKey = (repo) => `cyberneon.jobs.milestone.${repo}`;
 const trackKey = (repo) => `cyberneon.jobs.tracked.${repo}`;
@@ -127,6 +133,13 @@ export default class Jobs extends View {
     if (this.ctx?.folder !== folder) {
       const r = await git(["remote", "get-url", "origin"]);
       this.ctx = { folder, on, repo: r.code === 0 ? parseRemote(r.stdout) : null, branch: null };
+      // Where this repo's checkouts live: the main folder, and the worktree mod's ~/.herdr/worktrees/<repo>.
+      const c = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+      const main = c.code === 0 && c.stdout.trim() ? c.stdout.trim().replace(/\/\.git$/, "") : folder;
+      const h = await exec("sh", ["-c", 'printf %s "$HOME"'], { on }).catch(() => null);
+      this.ctx.main = main;
+      this.ctx.wt = h?.code === 0 && h.stdout ? `${h.stdout}/.herdr/worktrees/${main.split("/").pop()}` : null;
+      this.known = await knownAgents({ on }).then((l) => l.filter((a) => a.installed)).catch(() => null);
     }
     if (!this.ctx.repo) return;
     const b = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -137,6 +150,13 @@ export default class Jobs extends View {
     const picked = shared(pickKey(repo));
     const stale = force || !cache || cache.branch !== branch || age > (cache.error ? ERR_TTL : TTL)
       || (!cache.error && picked != null && picked !== cache.milestone);
+    // Local git, every tick (cheap): issues merged into the selected milestone's branch, not yet on the default
+    // branch. ponytail: the main checkout's HEAD stands in for the default branch.
+    const sel = cache?.milestones?.find((x) => x.number === cache.milestone);
+    if (sel && this.ctx.main) {
+      const r = await exec("git", ["-C", this.ctx.main, "log", "--format=%B", milestoneBranch(sel.number, sel.title), "^HEAD"], { on, timeout: 5000 }).catch(() => ({ code: 1 }));
+      this.merged = { m: sel.number, set: r.code === 0 ? mergedIssues(r.stdout) : new Set() };
+    } else this.merged = null;
     if (!stale) return;
     if (cache?.error && !force && cache.branch === branch && age < ERR_TTL) return; // gh errors: no retry before 5 min
     const lock = shared(LOCK);
@@ -175,6 +195,121 @@ export default class Jobs extends View {
       .map((i) => ({ key: `ms:${i.number}`, text: `#${i.number} ${i.title}`, state: "open" }));
     const list = tasks(shared(bodyKey(repo, job.number))?.body);
     return list.length ? list : [{ key: "close", text: `Close #${job.number}`, state: "open" }];
+  }
+
+  // An agent pane in this repo (main checkout or its worktrees) whose branch `of()` maps to n.
+  paneAgent(of, n) {
+    const roots = [this.ctx?.main, this.ctx?.wt].filter(Boolean);
+    const p = panes().find((p) => p.status && p.cwd && of(p.branch) === n && roots.some((r) => p.cwd === r || p.cwd.startsWith(`${r}/`)));
+    return p ? agents().find((a) => a.pane === p.pane) ?? null : null;
+  }
+
+  // A milestone's lead: the agent in a pane on its milestone-<n> branch.
+  leadFor(n) {
+    return this.paneAgent(branchMilestone, n);
+  }
+
+  // The agent working on issue n: a pane on an issue-n branch, else a background terminal in an issue-n
+  // worktree folder (an `hc run --bg` someone started there by hand).
+  agentFor(n) {
+    const p = this.paneAgent(branchIssue, n);
+    if (p) return p;
+    const sub = (x) => ({ status: x.status ?? "idle", address: x.address, peek: true, space_name: "SUBAGENT", tab_name: x.name ?? x.address });
+    // No pane: a background sub-agent (`hc run --bg`) started in one of this repo's worktrees. terminals() has no
+    // branch, so the checkout folder's name stands in for it (deploy names folders after their branch).
+    const wt = this.ctx?.wt;
+    const x = wt && terminals().find((x) => x.status && x.cwd?.startsWith(`${wt}/`) && branchIssue(x.cwd.slice(wt.length + 1).split("/")[0]) === n);
+    return x ? sub(x) : null;
+  }
+
+  picked() {
+    return (this.known ?? []).find((a) => a.key === shared(AGENT_PICK)) ?? this.known?.[0] ?? null;
+  }
+
+  // git worktree add for `branch` off `base` under the worktree root; "" when ready, else the error line.
+  // An existing branch is checked out; an existing checkout ("already exists") is reused.
+  async worktree(branch, base) {
+    const { main, wt, on } = this.ctx;
+    const git = (args) => exec("git", ["-C", main, ...args], { on, timeout: 600_000 }).catch((e) => ({ code: 1, stderr: String(e) }));
+    const has = (await git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0;
+    const r = await git(has ? ["worktree", "add", `${wt}/${branch}`, branch] : ["worktree", "add", "-b", branch, `${wt}/${branch}`, base]);
+    return r.code === 0 || /already exists/i.test(r.stderr ?? "") ? "" : (r.stderr || "git worktree add failed").trim().split("\n")[0].slice(0, 80);
+  }
+
+  // The one place this mod writes (git worktrees, local terminals; never GitHub), on a click.
+  act(job, cx, work) {
+    this.deploying = `${job.kind}${job.number}`; this.deployErr = null; cx.notify();
+    cx.spawn(async (cx) => {
+      try { this.deployErr = (await work()) || null; } catch (e) { this.deployErr = String(e?.message ?? e).slice(0, 80); }
+      this.deploying = null;
+      cx.notify();
+    });
+  }
+
+  // ▶ LAUNCH (milestone): a worktree space on milestone-<n>-<slug> running the picked agent as the lead. It reads
+  // the milestone, orders the issues by their dependencies, and hands them to subagents the way DISPATCH does.
+  launch(job, cx) {
+    const { wt, on, repo } = this.ctx;
+    const argv = this.picked()?.run ?? DEPLOY_ARGV, branch = milestoneBranch(job.number, job.title);
+    this.act(job, cx, async () => {
+      const err = await this.worktree(branch, "HEAD");
+      if (err) return err;
+      const task = [
+        `You lead milestone M${job.number} "${job.title}" in ${repo} (${job.url}). This worktree is its integration branch, ${branch}.`,
+        `1. Read the goal (gh api repos/${repo}/milestones/${job.number} --jq .description) and the open issues (gh issue list --milestone "${job.title}" --state open), each with gh issue view.`,
+        `2. Check what already exists before starting anything: git worktree list and hc ls --json (cwd) show issue-<n>-… worktrees and agents from earlier runs. Take those over (follow them with hc read/hc wait, merge their branches) instead of starting an issue again.`,
+        `3. Work out which issues depend on which: what has to land first, what can run in parallel. Write that plan down here first.`,
+        `4. Do small or blocking ones yourself on this branch. Hand each other issue to a sub-agent of yours, in its own worktree off this branch:`,
+        `   git worktree add -b issue-<n>-<slug> ${wt}/issue-<n>-<slug> ${branch}`,
+        `   hc run --bg --name issue-<n> --cwd ${wt}/issue-<n>-<slug> -- ${argv.join(" ")}`,
+        `   then, once hc get issue-<n> shows it idle: hc send issue-<n> "<the issue: number, title, url, what to do; commit on issue-<n>-<slug> with Closes #<n> in the message>"`,
+        `   Start them with exactly that command (${argv.join(" ")}): add no flags of your own, such as permission or sandbox bypasses. The person picked it.`,
+        `   Don't give them panes (terminal.keep would pull the person's focus); they show under you in the agents list, and you get a note when one ends.`,
+        `   (<slug>: the title's ASCII words, lowercase, joined by dashes, at most 40 characters. The JOBS panel links an agent to its issue by that folder.)`,
+        `5. Follow them with hc wait and hc read. Merge each finished issue branch into ${branch}. Start dependent issues only after what they need is merged.`,
+        `6. When every issue is merged here: push ${branch} and open a PR to the default branch (gh pr create) whose body has one "Closes #<n>" line per issue, yours included. Don't close issues yourself: merging that PR closes them, and that's the person's call.`,
+      ].join("\n");
+      run("space.new", { folder: `${wt}/${branch}`, machine: on ?? "", tab: `M${job.number}`, argv, task });
+      return "";
+    });
+  }
+
+  // ▶ DISPATCH (issue): a worktree on issue-<n>-<slug> (off the milestone's branch when its lead made one), then the
+  // picked agent there with the issue as its task.
+  // - Milestone lead running: a sub-agent of the lead (hc run --bg --parent), so the lead gets its notes and Herdr
+  //   keeps the link; then terminal.keep gives it a tab in the lead's space (and focus: you clicked for it).
+  // - No lead: a `#<n>` tab in the project's space (whose folder, or a pane, is the main checkout); none → a space.
+  dispatch(job, cx, cache) {
+    const { wt, on, repo, main } = this.ctx;
+    const argv = this.picked()?.run ?? DEPLOY_ARGV, branch = issueBranch(job.number, job.title), path = `${wt}/${branch}`;
+    const m = cache?.milestones?.find((x) => x.number === cache.milestone), lead = m ? this.leadFor(m.number) : null;
+    this.act(job, cx, async () => {
+      const mb = m ? milestoneBranch(m.number, m.title) : null;
+      const base = mb && (await exec("git", ["-C", main, "show-ref", "--verify", "--quiet", `refs/heads/${mb}`], { on }).catch(() => ({ code: 1 }))).code === 0 ? mb : "HEAD";
+      const err = await this.worktree(branch, base);
+      if (err) return err;
+      const task = `Work on GitHub issue #${job.number} in ${repo}: ${job.title}\n${job.url}\nRead it with \`gh issue view ${job.number}\`, implement it on this branch (${branch}), and commit with \`Closes #${job.number}\` in the message.`;
+      if (!lead) {
+        const home = spaces().find((sp) => (sp.machine ?? null) === (on ?? null) && (sp.folder === main
+          || panes().some((p) => p.cwd === main && (sp.tabs ?? []).some((tb) => tb.id === p.tab))));
+        if (home) run("tab.new", { space: home.id, folder: path, name: `#${job.number}`, argv, task });
+        else run("space.new", { folder: path, machine: on ?? "", tab: `#${job.number}`, argv, task });
+        return "";
+      }
+      const name = `issue-${job.number}-${Date.now().toString(36).slice(-4)}`; // unique among live terminals
+      const r = await exec("hc", ["run", "--bg", "--json", "--name", name, "--cwd", path, "--parent", lead.address,
+        ...(on ? ["--on", on] : []), "--", ...argv], { timeout: 30_000 }).catch((e) => ({ code: 1, stderr: String(e) }));
+      if (r.code !== 0) return (r.stderr || "hc run failed").trim().split("\n")[0].slice(0, 80);
+      let addr = name;
+      try { addr = JSON.parse(r.stdout).address ?? name; } catch {}
+      run("terminal.keep", { terminal: addr });
+      // The task waits until the agent says it's idle (typed earlier it would land in the shell).
+      for (let i = 0; i < 45; i++) {
+        if ((await exec("hc", ["send", "--if", "idle", addr, task], { timeout: 10_000 }).catch(() => ({ code: 1 }))).code === 0) return "";
+        await sleep(2);
+      }
+      return `agent never went idle; send the task by hand (hc send ${addr} …)`;
+    });
   }
 
   // Tracked job ref. Unset → the branch's PR; null (UNTRACK) → nothing.
@@ -312,6 +447,7 @@ export default class Jobs extends View {
     const on = same(job, sel);
     const ms = job.kind === "milestone" ? msInfo(job.ms) : null;
     const tall = Boolean(ms) || Boolean(job.tags?.length);
+    const ag = job.kind === "issue" ? this.agentFor(job.number) : job.kind === "milestone" ? this.leadFor(job.number) : null;
     return h_flex().id(`job-${job.kind}-${job.number}`).relative().when(!tall, (el) => el.h(46).items_center()).when(tall, (el) => el.py(7).items_start()) // tall: emblem stays at the top
       .flex_none().pl(8).pr(8).gap(8).rounded(0)
       .border(1).border_color(on ? t.accent : t.border).cursor_pointer()
@@ -330,7 +466,13 @@ export default class Jobs extends View {
           .when(Array.isArray(job.assignees), (el) => el
             .child(div().flex_none().text_color(t.dim).child("·"))
             .child(div().min_w(0).truncate().text_color(job.assignees.length ? t.foreground : t.dim)
-              .child(job.assignees.length ? `@${job.assignees[0]}${job.assignees.length > 1 ? ` +${job.assignees.length - 1}` : ""}` : "UNASSIGNED"))))
+              .child(job.assignees.length ? `@${job.assignees[0]}${job.assignees.length > 1 ? ` +${job.assignees.length - 1}` : ""}` : "UNASSIGNED")))
+          // Done on the milestone branch, still open on GitHub: merging the milestone's PR closes it.
+          .when(job.kind === "issue" && Boolean(this.merged?.set.has(job.number)), (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
+            .child(div().flex_none().text_color(t.done).child(`MERGED → M${this.merged.m}`)))
+          // An agent on it: its state word in the state color.
+          .when(Boolean(ag), (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
+            .child(div().flex_none().text_color(t[ag.status] ?? t.foreground).child(`▶ ${WORD[ag.status] ?? String(ag.status).toUpperCase()}`))))
         // Issue labels: a square in the label's GitHub color + its name; up to 3, then +n.
         .when(Boolean(job.tags?.length), (el) => el.child(h_flex().pt(3).gap(8).min_w(0).overflow_hidden().font_family(MONO).text_size(9)
           .children(job.tags.slice(0, 3).map((g) => h_flex().flex_none().gap(4).items_center()
@@ -421,10 +563,50 @@ export default class Jobs extends View {
         .when(body == null, (el) => el.child(div().font_family(MONO).text_size(11).text_color(t.dim).child(b?.error ? `NO UPLINK // ${b.error}` : "DECRYPTING…")))
         .when(body != null && !lines.join("").trim(), (el) => el.child(div().font_family(MONO).text_size(11).text_color(t.dim).child("NO BRIEFING")))
         .children(lines.map((l) => (l.trim() ? div().text_size(12.5).text_color(t.muted).child(l) : div().h(6)))))
+      // Pinned under the scroll area, above TRACK / OPEN: the milestone's lead or the issue's agent.
+      .when(job.kind !== "pr", (el) => el.child(v_flex().flex_none().gap(4).pt(6).border_t(1).border_color(t.border)
+        .child(label(job.kind === "milestone" ? "//03 LEAD" : "//03 AGENT")).child(this.agentSection(t, job, cache))))
       .child(h_flex().flex_none().gap(6).pt(4)
         .child(this.button(t, "track", isTracked ? "UNTRACK" : "TRACK", !isTracked,
           () => setShared(trackKey(repo), isTracked ? null : { kind: job.kind, number: job.number })))
         .child(this.button(t, "open", "OPEN", false, (_e, cx) => this.open(job.url, cx))));
+  }
+
+  // Milestone → its lead (▶ LAUNCH: worktree space + lead agent); issue → its agent (▶ DISPATCH: the lead's sub-agent
+  // as a tab, or a plain tab without a lead).
+  // Running: its state and JACK IN. Not running: the agent dropdown and the button.
+  agentSection(t, job, cache) {
+    const ms = job.kind === "milestone";
+    const a = ms ? this.leadFor(job.number) : this.agentFor(job.number);
+    const mono = (s, c = t.muted) => div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(c).child(s);
+    if (a) return h_flex().gap(8).items_center()
+      .child(div().flex_none().font_family(MONO).text_size(11).text_color(t[a.status] ?? t.foreground).child(`▶ ${WORD[a.status] ?? a.status}`))
+      .child(div().flex_1().min_w(0).child(mono(`${a.space_name} / ${a.tab_name}`, t.foreground)))
+      .child(this.button(t, "jack-in", "JACK IN", true, () => { if (a.peek) run("terminal.peek", { terminal: a.address }); else { run("space.select", { id: a.space }); run("pane.focus", { pane: a.pane }); } }));
+    if (!this.ctx?.wt) return mono("NO AGENT // can't find this machine's home", t.dim);
+    const busy = this.deploying === `${job.kind}${job.number}`;
+    const pick = this.picked();
+    const go = ms ? "▶ LAUNCH" : "▶ DISPATCH";
+    // Dropdown: the picked agent with ▾; open, the installed agents listed in place (like the milestone picker).
+    const head = h_flex().id("agent-pick").flex_1().min_w(0).h(22).px(6).gap(6).items_center().rounded(0).cursor_pointer()
+      .border(1).border_color(this.agentOpen ? t.accent : t.border).hover((st) => st.bg(t.hover))
+      .on_click((_e, cx) => { this.agentOpen = !this.agentOpen; cx.notify(); })
+      .child(div().flex_none().font_family(MONO).text_size(9).text_color(t.dim).child("AGENT //"))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground)
+        .child(pick?.name ?? (this.known ? "NO AGENTS INSTALLED" : DEPLOY_ARGV.join(" "))))
+      .child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(this.agentOpen ? "▴" : "▾"));
+    const options = this.agentOpen ? (this.known ?? []).map((k) => h_flex().id(`agent-${k.key}`).h(22).pl(12).pr(4).gap(6).items_center().cursor_pointer()
+      .hover((st) => st.bg(t.hover))
+      .on_click((_e, cx) => { this.agentOpen = false; setShared(AGENT_PICK, k.key); cx.notify(); })
+      .child(div().size(6).flex_none().when(k.key === pick?.key, (el) => el.bg(t.accent)).when(k.key !== pick?.key, (el) => el.border(1).border_color(t.dim)))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(k.key === pick?.key ? t.foreground : t.muted).child(k.name))) : [];
+    return v_flex().gap(4)
+      .child(mono(`NO ${ms ? "LEAD" : "AGENT"} // ${ms ? milestoneBranch(job.number, job.title) : issueBranch(job.number, job.title)}`, t.dim))
+      .child(h_flex().gap(6).items_center().child(head)
+        .child(this.button(t, "deploy", busy ? (ms ? "LAUNCHING…" : "DISPATCHING…") : go, !busy,
+          (_e, cx) => { if (!busy) (ms ? this.launch(job, cx) : this.dispatch(job, cx, cache)); })))
+      .children(options)
+      .when(Boolean(this.deployErr), (el) => el.child(mono(`ERROR // ${this.deployErr}`, t.blocked)));
   }
 
   journal(t, repo, cache) {

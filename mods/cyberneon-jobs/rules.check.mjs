@@ -38,3 +38,39 @@ assert.equal(msInfo({ open_issues: 1, closed_issues: 0, due_on: "2026-11-10T00:0
 assert.equal(msInfo({ open_issues: 1, closed_issues: 0, due_on: "2026-11-10T00:00:00Z" }, NOW).hot, true);
 assert.deepEqual(msInfo({ open_issues: 0, closed_issues: 0, due_on: null }, NOW), { done: 0, total: 0, pct: 0, due: "NO DUE DATE", hot: false });
 console.log("msInfo ok");
+
+// issue <-> branch
+import { issueBranch, branchIssue } from "./rules.js";
+assert.equal(issueBranch(4, "Jobs: find or deploy the agent for an issue"), "issue-4-jobs-find-or-deploy-the-agent-for-an-iss");
+assert.equal(issueBranch(333, "Mod：靜態資料和 secret 的儲存"), "issue-333-mod-secret");
+assert.equal(issueBranch(7, "儲存"), "issue-7");
+assert.equal(branchIssue("issue-4-jobs-find"), 4);
+assert.equal(branchIssue("issue-12"), 12);
+assert.equal(branchIssue("feat/issue-9-x"), 9);
+assert.equal(branchIssue("333-mod-secret"), 333);
+assert.equal(branchIssue("main"), null);
+assert.equal(branchIssue("v0.2-polish"), null);
+assert.equal(branchIssue(null), null);
+console.log("issue branch ok");
+
+// milestone branches
+import { milestoneBranch, branchMilestone } from "./rules.js";
+assert.equal(milestoneBranch(1, "v0.3 Polish"), "milestone-1-v0-3-polish");
+assert.equal(branchMilestone("milestone-1-v0-3-polish"), 1);
+assert.equal(branchMilestone("milestone-12"), 12);
+assert.equal(branchMilestone("issue-1-x"), null);
+assert.equal(branchIssue("milestone-1-v0-3-polish"), null);
+console.log("milestone branch ok");
+
+// merged into the milestone branch
+import { mergedIssues } from "./rules.js";
+const ml = mergedIssues(`Merge #4: explain JACK IN in the README
+Docs: explain JACK IN and DEPLOY AGENT in the README
+Merge branch 'issue-2-check-graph' into milestone-1
+Fix GRAPH scroll
+
+Closes #7, fixes #8
+see #9 for context`);
+assert.deepEqual([...ml].sort((a, b) => a - b), [2, 4, 7, 8]);
+assert.equal(mergedIssues("").size, 0);
+console.log("mergedIssues ok");

@@ -65,3 +65,25 @@ export const plain = (md) => (md ?? "").replace(/\r/g, "")
   .replace(/(\*\*|__|\*|_|`|~~)(\S(?:.*?\S)?)\1/g, "$2")
   .replace(/\n{3,}/g, "\n\n")
   .trim();
+
+// Issue ↔ branch. Deploy makes `issue-<n>-<title slug>`; finding also accepts gh issue develop's `<n>-…`.
+// ponytail: naming convention only; a branch named some other way isn't linked (gh's linked-branch API would be).
+const slug = (title) => String(title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 40).replace(/-+$/, "");
+export const issueBranch = (n, title) => (slug(title) ? `issue-${n}-${slug(title)}` : `issue-${n}`);
+// A milestone's lead works on `milestone-<n>-<slug>`, the integration branch its issues branch off.
+export const milestoneBranch = (n, title) => (slug(title) ? `milestone-${n}-${slug(title)}` : `milestone-${n}`);
+export const branchMilestone = (b) => Number(String(b ?? "").match(/(?:^|\/)milestone-(\d+)(?:-|$)/)?.[1]) || null;
+export const branchIssue = (b) => Number(String(b ?? "").match(/(?:^|\/)(?:issue-)?(\d+)(?:-|$)/)?.[1]) || null;
+
+// Issues already merged into a milestone branch, from `git log <milestone> ^<default>` messages: a merge line naming
+// `#n` or `issue-n-…`, or a closing keyword (`Closes #n`, `Fixes #n`, `Resolves #n`; GitHub's own set).
+// ponytail: messages only; a squash or rebase with neither leaves the issue unmarked.
+export function mergedIssues(log) {
+  const out = new Set();
+  for (const line of String(log ?? "").split("\n")) {
+    const m = line.match(/^\s*Merge\b.*?(?:#|issue-)(\d+)\b/i);
+    if (m) out.add(Number(m[1]));
+    for (const k of line.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi)) out.add(Number(k[1]));
+  }
+  return out;
+}

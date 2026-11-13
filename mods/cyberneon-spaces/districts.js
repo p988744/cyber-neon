@@ -268,7 +268,9 @@ export function labels(items, width) {
     && !pts.some((p) => hitsPoint(box, p));
   for (const it of sorted) {
     const full = String(it.name).toUpperCase(), sub = String(it.sub ?? "");
-    const h = sub ? 26 : 16, w2 = [...sub].reduce((s, c) => s + MONO_CH(c), 0);
+    // Extra 10px lines under the details (a repo's worktree spaces).
+    const lines = [sub, ...(it.more ?? [])].filter(Boolean);
+    const h = 16 + 10 * lines.length, w2 = Math.max(0, ...lines.map((l) => [...l].reduce((s, c) => s + MONO_CH(c), 0)));
     const make = (n) => {
       const name = n === full.length ? full : full.slice(0, n - 1) + "\u2026";
       const line1 = `${it.num} ${name}`;
@@ -282,7 +284,7 @@ export function labels(items, width) {
           const k = ux && uy ? Math.SQRT1_2 : 1, ax = it.x + ux * d * k, ay = it.y + uy * d * k;
           const box = { x: Math.round(ux > 0 ? ax : ux < 0 ? ax - t.w : ax - t.w / 2), y: Math.round(uy > 0 ? ay : uy < 0 ? ay - h : ay - h / 2), w: t.w, h };
           const lead = leader(box, it.x, it.y, it.r);
-          if (ok(box, lead)) { got = { ...box, line1: t.line1, sub, lead }; break; }
+          if (ok(box, lead)) { got = { ...box, line1: t.line1, sub, more: it.more ?? [], lead }; break; }
         }
         if (got) break;
       }
@@ -292,13 +294,13 @@ export function labels(items, width) {
       const t = make(Math.min(4, full.length));
       for (const [dx, dy] of NEAR) {
         const box = { x: Math.round(it.x + 14 + dx), y: Math.round(it.y - h / 2 + dy), w: t.w, h }, lead = leader(box, it.x, it.y, it.r);
-        if (ok(box, lead)) { got = { ...box, line1: t.line1, sub, lead }; break; }
+        if (ok(box, lead)) { got = { ...box, line1: t.line1, sub, more: it.more ?? [], lead }; break; }
       }
       if (!got) {
         // Last resort: below every tag and point (never overlaps); only its leader may cross a tag.
         const y = Math.ceil(Math.max(...placed.map((p) => p.y + p.h), ...pts.map((p) => p[1] + PR))) + 4;
         const box = { x: Math.max(0, Math.min(width - t.w, Math.round(it.x - t.w / 2))), y, w: t.w, h };
-        got = { ...box, line1: t.line1, sub, lead: leader(box, it.x, it.y, it.r), far: true };
+        got = { ...box, line1: t.line1, sub, more: it.more ?? [], lead: leader(box, it.x, it.y, it.r), far: true };
       }
     }
     out[it.id] = got;
@@ -331,4 +333,26 @@ export function region(input, avail, seed) {
   const lines = roads(boxes, avail, geo.height);
   const points = boxes.map((b) => ({ id: b.id, x: b.x + b.w / 2, y: b.y + b.h / 2 }));
   return { boxes, points, ...geo, lines, bridges: bridges(lines, geo.river) };
+}
+
+// Worktree spaces → their repo's space. A worktree space's folder is Herdr's checkout root
+// `…/.herdr/worktrees/<repo>/<branch>`; its parent is another space (same machine) whose folder has a
+// `<repo>` segment and isn't a worktree. ponytail: name match only, so worktrees made elsewhere stay
+// their own district, and two repos with the same folder name pick the first. list: [{ id, place, machine }].
+const WT = /\/\.herdr\/worktrees\/([^/]+)\/[^/]+/;
+export function worktreeParents(list) {
+  const out = {};
+  for (const k of list) {
+    const m = String(k.place ?? "").match(WT);
+    if (!m) continue;
+    // Closest to the repo root wins: `…/herdr-gallery` over `…/herdr-gallery/mods/x` (a space opened in a subfolder).
+    let best = null, depth = Infinity;
+    for (const s of list) {
+      if (s.id === k.id || (s.machine ?? null) !== (k.machine ?? null) || WT.test(s.place ?? "")) continue;
+      const seg = String(s.place ?? "").split("/"), at = seg.lastIndexOf(m[1]);
+      if (at >= 0 && seg.length - at < depth) { best = s; depth = seg.length - at; }
+    }
+    if (best) out[k.id] = best.id;
+  }
+  return out;
 }
