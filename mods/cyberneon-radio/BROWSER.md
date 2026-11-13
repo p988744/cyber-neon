@@ -77,3 +77,8 @@ about those sources is made here.
 argument-array handoff on both platforms, unsupported platforms, nonzero exit
 status and thrown/timeout failures using an injected opener. No real browser,
 network media, user's station config or running app is changed by this check.
+
+`node mods/cyberneon-radio/browser.native.check.mjs` loads the real host imports
+and URL implementation in a temporary native fixture via `herdr-app check`.
+It validates URL normalization/rejection and adapter construction without calling
+the browser opener. This is not an end-to-end browser playback check.
