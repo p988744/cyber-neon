@@ -85,3 +85,11 @@ go through it; off → static chip / static `▰▰▱▱`. No timers added (the
   `5h limit N% left` → 5H (only shown by Codex near that limit, so 5H is usually absent and its row hides).
 - A line with "% left" is parsed only as Codex, so Claude's 5h rule can't misread "5h limit 80% left".
 - No reset times in Codex's footer, so 7D has no ⟳. Checked against two live Codex agents on a remote machine.
+
+## v6 telemetry: Oh My Pi (omp)
+- Footer: `π · ◔ <model> · 📁 <path> · ⑂ <branch> · ◫ 3.4%/1M ⟲ · $0.02` → MODEL (2nd segment), CONTEXT (`◫ N%`, rounded), COST (`$…`).
+- No 5h/7d in it, so those rows hide. Model is picked by position; a reordered footer would need a smarter pick.
+
+## v7 telemetry: OpenCode
+- Bottom line `<path>  17.9K (9%)  ctrl+p commands  • OpenCode 1.18.13` → CONTEXT; prompt box `┃  Build · <model> <provider>` → MODEL; sidebar `$0.00 spent` → COST (wide windows only).
+- `telemetry()` now takes the whole screen and slices the last 8 lines itself, because the sidebar cost sits higher up. Checked against a live OpenCode 1.18.13 screen.

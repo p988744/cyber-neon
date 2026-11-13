@@ -281,7 +281,7 @@ export default class Agents extends View {
     this.acx.spawn(async (cx) => {
       try {
         const r = await exec("hc", ["read", addr], { timeout: 5000 });
-        entry.data = r.code === 0 ? telemetry(r.stdout.trimEnd().split("\n").slice(-8).join("\n")) : null;
+        entry.data = r.code === 0 ? telemetry(r.stdout) : null;
       } catch { entry.data = null; }
       cx.notify();
     });
@@ -316,6 +316,7 @@ export default class Agents extends View {
         tel.ctx != null && bar("CONTEXT", tel.ctx),
         tel.h5 != null && bar("5H", tel.h5, tel.h5Reset),
         tel.d7 != null && bar("7D", tel.d7, tel.d7Reset),
+        tel.cost && line("COST", tel.cost),
         (tel.h5 != null || tel.d7 != null) && div().pl(70).font_family(MONO).text_size(8).text_color(t.dim).child("ACCOUNT-WIDE"),
       ].filter(Boolean);
     return v_flex().pt(6).gap(1)

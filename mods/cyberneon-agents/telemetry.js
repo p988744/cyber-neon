@@ -4,13 +4,39 @@
 // Codex's footer says what is LEFT, so it's turned into "used" to match:
 //   GPT-6.1 Terra medium Fast · ~/projects/ledger · Context 87% left · weekly 69% left
 //   (a "5h limit N% left" part appears there too, near that limit)
-// → { model, ctx, h5, h5Reset, d7, d7Reset }, all as % USED; missing fields null; null if nothing parses.
+// Oh My Pi (omp) footer: model, context used of the window, session cost:
+//    π · ◔ deepseek-v4.1-flash:cloud · 📁 ~/proj · ⑂ main ?1 · ◫ 3.4%/1M ⟲ · $0.02
+// OpenCode: status line at the bottom, model on the prompt box, cost in the sidebar (wide windows only):
+//   ┃  Build · Big Pickle OpenCode Zen        /path
+//   /path        17.9K (9%)  ctrl+p commands    • OpenCode 1.18.13
+//   $0.00 spent
+// Takes the whole screen: the status lines are parsed from the last 8 lines, "$N spent" from anywhere.
+// → { model, ctx, h5, h5Reset, d7, d7Reset, cost }, all as % USED; missing fields null; null if nothing parses.
 // The last match wins: the status line sits at the bottom, older copies may be above it.
 export function telemetry(text) {
-  const out = { model: null, ctx: null, h5: null, h5Reset: null, d7: null, d7Reset: null };
+  const out = { model: null, ctx: null, h5: null, h5Reset: null, d7: null, d7Reset: null, cost: null };
   const pct = (re, s) => { const m = s.match(re); return m ? [Number(m[1]), m[2] ?? null] : null; };
   const left = (re, s) => { const m = s.match(re); return m ? 100 - Number(m[1]) : null; };
-  for (const line of String(text ?? "").split("\n")) {
+  const all = String(text ?? "").trimEnd().split("\n");
+  const opencode = all.some((l) => /•\s+OpenCode\s+\d/.test(l));
+  for (const line of all.slice(-8)) {
+    if (opencode) {
+      const c = line.match(/\d[\d.,]*[KM]?\s+\((\d{1,3})%\)/);
+      if (c && /•\s+OpenCode/.test(line)) out.ctx = Number(c[1]);
+      const m = line.match(/^\s*┃\s+\S[^·]*·\s+(.+?)(?:\s{2,}|$)/u);
+      if (m) out.model = m[1].trim();
+      continue;
+    }
+    // omp: starts with "π ·". ponytail: model is the 2nd segment (default footer order); a reordered footer needs a smarter pick.
+    if (/^\s*π\s+·/u.test(line)) {
+      const seg = line.trim().split(" · ");
+      if (seg[1]) out.model = seg[1].replace(/^[^\p{L}\p{N}]+/u, "").trim() || null;
+      const c = line.match(/◫\s*([\d.]+)%/u);
+      if (c) out.ctx = Math.round(Number(c[1]));
+      const $ = line.match(/\$(\d[\d.,]*)/);
+      if ($) out.cost = `$${$[1]}`;
+      continue;
+    }
     // Codex: a "% left" footer. Parsed on its own so Claude's 5h rule can't read "5h limit 80% left" as 80% used.
     if (/\d%\s+left\b/i.test(line)) {
       const c = left(/\bContext\s+(\d{1,3})%\s+left/i, line), h = left(/\b5h(?:\s+limit)?:?\s+(\d{1,3})%\s+left/i, line),
@@ -35,6 +61,8 @@ export function telemetry(text) {
     const d = pct(/\b7d\s+\S+\s+(\d{1,3})%(?:\s*⟳\s*(\S+))?/u, line);
     if (d) [out.d7, out.d7Reset] = d;
   }
+  const spent = [...all.join("\n").matchAll(/\$(\d[\d.,]*)\s+spent\b/g)].pop();
+  if (spent) out.cost = `$${spent[1]}`;
   return Object.values(out).some((v) => v !== null) ? out : null;
 }
 

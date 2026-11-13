@@ -6,12 +6,12 @@ A Herdr Desktop layout inspired by the user interface of Cyberpunk 2077: red-on-
 
 ![Cyber-Neon](preview.png)
 
-Version 0.2.0 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan work
+Version 0.2.1 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan work
 
 ## What you get
 
 - **Space map**: your spaces as points on a generated city map with coast, river and roads. They're placed A to Z by name, with yellow labels (agents, branch, open milestones and issues) and a numbered legend. Hover a point to see every agent in that space.
-- **Agents list with a scanner**: hover an agent for a scan card with its class, state, uptime, path and branch, live context and 5h/7d usage (Claude Code and Codex), and a THREAT meter.
+- **Agents list with a scanner**: hover an agent for a scan card with its class, state, uptime, path and branch, live context and 5h/7d usage (Claude Code and Codex; model, context and cost for Oh My Pi and OpenCode), and a THREAT meter.
 - **JOBS journal**: for a GitHub repo, the current branch's PR is the main job, with CI checks, review and task boxes as objectives. Your assigned issues are side jobs, and milestone issues are gigs. There's a RISK level per job, a tracked job, and a floating job HUD you can minimize or close.
 - **GRAPH page**: the focused repo's commit graph in the right panel, with neon lanes, diamond commits, branch and tag chips, a hover card with stats, and click to copy the hash. It's local and read-only git.
 - **Everything restyled**: tabs, pane headers, menus, a hacking-style `cmd-p` picker, in-game style notifications and a status readout. Blocked agents are impossible to miss.

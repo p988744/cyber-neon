@@ -319,7 +319,7 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 
 ### Pure helpers, each with a node check
 
-- `cyberneon-agents/telemetry.js`: `telemetry(text)` parses Claude Code's and Codex's status lines into `{model, ctx, h5, h5Reset, d7, d7Reset}` as % used; `threat(status, ctx, blockedMs)`. Check: `node mods/cyberneon-agents/telemetry.check.mjs`.
+- `cyberneon-agents/telemetry.js`: `telemetry(text)` parses Claude Code's, Codex's, Oh My Pi's and OpenCode's status lines into `{model, ctx, h5, h5Reset, d7, d7Reset, cost}` as % used; `threat(status, ctx, blockedMs)`. Check: `node mods/cyberneon-agents/telemetry.check.mjs`.
 - `cyberneon-spaces/districts.js`: A-Z placement, `region()` (terrain, river, islets, suburbs, roads, bridges, seeded mulberry32 from the name hash), `labels()` (tag placement), `ring()`, `code()`. Check: `node mods/cyberneon-spaces/districts.check.mjs` (points on land and off the river, no overlaps, leaders clear of tags, determinism; 9 spaces at 250px+ place with no stacked tag).
 - `cyberneon-jobs/rules.js`: checkbox tasks, PR objectives, the three risk rules. Check: `node mods/cyberneon-jobs/rules.check.mjs`.
 
@@ -369,6 +369,8 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 ### Data quirks
 
 - **Codex telemetry says what is left.** Codex's footer (`GPT-6.1 Terra medium Fast · ~/projects/ledger · Context 87% left · weekly 69% left`) is turned into % used (ctx 13, 7D 31) so bars mean the same for both agents. `weekly` → 7D; `5h limit N% left` → 5H, which Codex only shows near that limit, so the row is usually hidden. A line with "% left" is parsed only as Codex, so the Claude rule can't misread "5h limit 80% left". Codex shows no reset time. Claude Code's lines look like `atlas-site │ ctx ◑ 42%` and `Opus 5.5 medium │ 5h ◔ 30% ⟳ 1h24m │ 7d ◔ 5% ⟳ 6d17h`; `ctx --` (fresh session) hides CONTEXT. `hc read` has no tail flag, so the last 8 non-blank lines are parsed and the last match wins.
+- **Oh My Pi (`omp`) telemetry.** Its footer starts with `π ·`: `π · ◔ <model> · 📁 <path> · ⑂ <branch> · ◫ 3.4%/1M ⟲ · $0.02`. The 2nd segment is MODEL (leading glyph dropped), `◫ N%` is CONTEXT (rounded), `$…` is a COST row. It has no 5h/7d, so those rows hide.
+- **OpenCode telemetry.** Recognized by `• OpenCode <version>` on its bottom line, which also holds `17.9K (9%)` → CONTEXT. MODEL is the prompt box line after `·` (`┃  Build · Big Pickle OpenCode Zen`, provider included). COST is the sidebar's `$0.00 spent`, which is off the last 8 lines, so `telemetry()` takes the whole `hc read` screen and slices the status lines itself; the sidebar only shows in wide windows, so COST can be missing.
 - **Toast tags come from the title.** Herdr's own agent toasts don't carry a reliable `level`: a finished agent came with none (plain NOTICE), and "Claude Code needs you" came as `error`. So `kind()` matches English words in the title and body **before** looking at `level`. A localized Herdr would need its words added.
 - THREAT's blocked time comes from this mod's own stamp of the last state change; it restarts at 0 after a mod reload.
 - `GIGS` excludes issue numbers already in `SIDE JOBS` instead of reading assignees; a 51st assigned issue would show as a gig.
@@ -406,7 +408,7 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 ### Assumptions
 
 - `gh` is installed and logged in (`gh auth login`), for JOBS and the map's quest counts. Without it: `NO UPLINK // gh not installed` or `gh not logged in`, and no ◆◇ counts; everything else works.
-- Telemetry needs Claude Code's status line showing ctx / 5h / 7d, or Codex's footer showing "% left". Otherwise `NO TELEMETRY`.
+- Telemetry needs Claude Code's status line showing ctx / 5h / 7d, Codex's footer showing "% left", Oh My Pi's `π ·` footer, or OpenCode's `• OpenCode` status line. Otherwise `NO TELEMETRY`.
 - `hc` (Herdr core) is on the path for `hc read` and `hc machine ls`.
 - macOS is the default: `cmd` keys, traffic-light padding, `⌘` in the palette hint. Windows gets its own window buttons; other keys follow Herdr's defaults.
 - JetBrains Mono is available (Herdr ships it).
@@ -422,7 +424,7 @@ Shipped mods used as-is: `files` and `changes` (panel pages), plus the `worktree
 5. Clicking a tag or legend line switches space; hovering a point for 300ms opens its card; scrolling the map and then hovering keeps the scroll.
 6. A working agent shows a running `▰▱▱` bar on its tab, an `EXEC` chip with a bar in its pane header, an `EXEC` row (or cyan square) in the agents list, a cyan arc on its space's ring, and counts in the status bar.
 7. An agent waiting for input turns its tab square red and blinking, its pane header red with `INPUT REQ`, its row red under `NEEDS YOU`, its map tag red, and the status bar's blocked count red. A notification whose title says it needs you shows `INPUT REQUIRED` on a red tag and slides in from the right.
-8. Hovering an agent row for 400ms opens the `SCAN // 0x…` card beside the sidebar, with `//TELEMETRY` bars from a Claude Code or Codex status line and a THREAT bar.
+8. Hovering an agent row for 400ms opens the `SCAN // 0x…` card beside the sidebar, with `//TELEMETRY` bars from a Claude Code, Codex, Oh My Pi or OpenCode status line and a THREAT bar.
 9. In a folder whose `origin` is on github.com, with a branch that has an open PR: the journal shows `owner/repo // branch // NS AGO`, the PR under `MAIN JOBS` with its risk, and the HUD at the top right shows `JOB #n`, the title and up to three open objectives. `–` shrinks it to one line, `×` hides it, the journal's `HUD` brings it back. In a folder with no GitHub remote, the journal says `NO UPLINK // not a GitHub repo` and the HUD is gone.
 10. The right panel opens on Jobs for a new space; the tab bar's Files / Changes / Jobs toggles switch pages, and clicking the lit one hides the panel.
 11. `cmd-p` opens the `UPLINK //` picker with a `00:NN` readout that turns red at 0 matches; Enter goes to the selected tab.

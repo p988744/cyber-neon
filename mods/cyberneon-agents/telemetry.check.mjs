@@ -6,10 +6,10 @@ const sample = `some output
   claudeProject/herdr-gallery │ ctx ◑ 42%
   Opus 5.5 medium │ 5h ◔ 30% ⟳ 1h24m │ 7d ◔ 5% ⟳ 6d17h
   ⏵⏵ bypass permissions on`;
-assert.deepEqual(telemetry(sample), { model: "Opus 5.5 medium", ctx: 42, h5: 30, h5Reset: "1h24m", d7: 5, d7Reset: "6d17h" });
+assert.deepEqual(telemetry(sample), { model: "Opus 5.5 medium", ctx: 42, h5: 30, h5Reset: "1h24m", d7: 5, d7Reset: "6d17h", cost: null });
 
 assert.deepEqual(telemetry("x │ ctx ● 91%\nSonnet 5.5 │ 5h ◕ 77% ⟳ 12m"),
-  { model: "Sonnet 5.5", ctx: 91, h5: 77, h5Reset: "12m", d7: null, d7Reset: null });
+  { model: "Sonnet 5.5", ctx: 91, h5: 77, h5Reset: "12m", d7: null, d7Reset: null, cost: null });
 
 assert.equal(telemetry("$ ls\nfoo bar 5h\n%%% ⟳"), null);
 assert.equal(telemetry(""), null);
@@ -47,3 +47,29 @@ assert.equal(cx5.ctx, 64);
 assert.equal(cx5.h5, 80);
 assert.equal(cx5.d7, 31);
 console.log("codex ok");
+
+// Oh My Pi (omp) footer
+const omp = telemetry(`❯
+────────
+ π · ◔ deepseek-v4.1-flash:cloud · 📁 ~/proj · ⑂ main ?1 · ◫ 3.4%/1M ⟲ · $0.02`);
+assert.equal(omp.model, "deepseek-v4.1-flash:cloud");
+assert.equal(omp.ctx, 3);
+assert.equal(omp.cost, "$0.02");
+assert.equal(omp.h5, null);
+assert.equal(telemetry(" π · ◔ claude-opus-5-5 · ◫ 81.6%/200K · $4.10").ctx, 82);
+console.log("omp ok");
+
+// OpenCode (real screen shape: sidebar text shares rows with the chat)
+const oc = telemetry(`  ┃  say hi in one word        Context
+                             17,895 tokens
+     Hi                      9% used
+                             $0.00 spent
+  ┃
+  ┃  Build · Big Pickle OpenCode Zen                         /private/tmp/x
+  ╹▀▀▀▀▀▀▀▀
+   /private/tmp/x          17.9K (9%)  ctrl+p commands    • OpenCode 1.18.13`);
+assert.equal(oc.model, "Big Pickle OpenCode Zen");
+assert.equal(oc.ctx, 9);
+assert.equal(oc.cost, "$0.00");
+assert.equal(oc.h5, null);
+console.log("opencode ok");
