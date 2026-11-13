@@ -4,6 +4,7 @@ import { theme, shared, nextCommand } from "herdr";
 import { RadioEngine } from "./engine.js";
 import { localReceiver } from "./bridge.js";
 import { localStations } from "./station-storage.js";
+import { localBrowser } from "./browser-host.js";
 import { Tuner, staticFrames } from "./tuner.js";
 import { DirectoryPanel } from "./search-ui.js";
 
@@ -17,7 +18,7 @@ export default class Radio extends View {
     this.engine = new RadioEngine(localReceiver());
     this.store = localStations();
     this.directory = new DirectoryPanel(this.store);
-    this.tuner = new Tuner(this.engine, this.store);
+    this.tuner = new Tuner(this.engine, this.store, localBrowser());
     this.open = false;
     this.tuning = 0;
     this.tuneGeneration = 0;
@@ -104,7 +105,7 @@ export default class Radio extends View {
 
   act(action, cx, value) {
     const dismissalGeneration = this.dismissalGeneration;
-    const visual = (action === "power" && !this.tuner.on() && this.tuner.station())
+    const visual = (action === "power" && !this.tuner.on() && !this.tuner.browserOpened && this.tuner.station())
       || (["next", "prev", "choose"].includes(action) && this.tuner.on() && this.tuner.stations().length);
     if (visual && anim()) {
       const generation = ++this.tuneGeneration;
@@ -112,7 +113,10 @@ export default class Radio extends View {
       cx.timer.after(420, cx => { if (this.tuning === generation) { this.tuning = 0; cx.notify(); } });
     }
     cx.spawn(async (cx) => {
-      const beforePlay = station => this.presentWarning(station, cx, dismissalGeneration);
+      const beforePlay = async station => {
+        if (await this.presentWarning(station, cx, dismissalGeneration) === false) return false;
+        return () => dismissalGeneration === this.dismissalGeneration && !this.tuner.closed;
+      };
       const job = action === "next" ? this.tuner.step(1, beforePlay) : action === "prev" ? this.tuner.step(-1, beforePlay)
         : action === "choose" ? this.tuner.choose(value, beforePlay)
         : action === "power" ? this.tuner.power(beforePlay)
@@ -146,11 +150,12 @@ export default class Radio extends View {
     const t = theme(), state = this.engine.snapshot(), list = this.store.snapshot();
     const station = this.tuner.station(), on = this.tuner.on(), busy = this.tuner.pending > 0;
     const playing = on ? this.tuner.playing : null;
-    const warning = this.warning?.station ?? (station?.explicit ? station : playing?.explicit ? playing : null);
+    const browser = this.tuner.browserOpened;
+    const warning = this.warning?.station ?? (station?.explicit ? station : playing?.explicit ? playing : browser?.explicit ? browser : null);
     const warningGeneration = this.warning?.generation;
     const title = on ? state.title || "WAITING FOR TRACK DATA" : "RECEIVER OFF";
     const moving = anim() && on && title.length > 34;
-    const error = this.tuner.error || state.error || list.error;
+    const error = this.tuner.error || (!browser && state.error) || list.error;
     const line = div().id("radio-now-playing").relative().h(22).overflow_hidden().text_color(t.working)
       .tooltip(title).child(div().relative().flex_none().whitespace_nowrap().child(title)
         .when(moving, el => el.loop("left", { from: 0, to: -Math.max(20, title.length * 7 - 242), period: Math.max(5000, title.length * 160), easing: "linear" })));
@@ -168,13 +173,16 @@ export default class Radio extends View {
         .child(`Explicit content${this.warning ? ` // ${warning.name}` : ""}${warning.contentWarning && warning.contentWarning !== "Explicit content" ? ` // ${warning.contentWarning}` : ""}`)))
       .when(Boolean(station?.note), el => el.child(div().child(station.note)))
       .child(line)
+      .when(Boolean(station?.open), el => el.child(div().text_color(t.dim).child("BROWSER ONLY // opens outside Herdr")))
+      .when(Boolean(browser), el => el.child(div().id("radio-browser-opened").text_color(t.muted)
+        .child(`OPENED IN BROWSER // ${browser.name}. Playback is managed in your browser.`)))
       .child(div().id("radio-dial").h(18).overflow_hidden().text_color(t.accent).child("┆ · ┆ · ┃ · ┆ · ┆ · ┃ · ┆ · ┆ · ┃")
         .when(Boolean(this.tuning) && anim(), el => el.frames(STATIC, 55)))
       .child(h_flex().gap(6).items_center()
         .child(this.button("radio-prev", "◀ PREV", cx => this.act("prev", cx), Boolean(station) && !busy))
         .child(this.button("radio-next", "NEXT ▶", cx => this.act("next", cx), Boolean(station) && !busy))
         .child(div().flex_1())
-        .child(this.button("radio-power", on ? "OFF" : "PLAY", cx => this.act("power", cx), (on || Boolean(station)) && !busy)))
+        .child(this.button("radio-power", on ? "OFF" : browser ? "CLEAR" : station?.open ? "OPEN" : "PLAY", cx => this.act("power", cx), (on || Boolean(browser) || Boolean(station)) && !busy)))
       .child(h_flex().gap(8).items_center()
         .child(this.button("radio-mute", this.tuner.silenced ? "UNMUTE" : "MUTE", cx => this.act("mute", cx), !busy))
         .child(Slider.new(this.volume).flex_1().child(SliderTrack.new(this.volume).h(26).w_full().flex().items_center()
@@ -198,11 +206,12 @@ export default class Radio extends View {
   render() {
     const t = theme(), state = this.engine.snapshot();
     const name = this.tuner.on() ? this.tuner.playing?.name || "ON" : "OFF";
-    const explicit = this.tuner.on() && this.tuner.playing?.explicit;
+    const browser = this.tuner.browserOpened;
+    const explicit = (this.tuner.on() && this.tuner.playing?.explicit) || browser?.explicit;
     const chip = h_flex().id("radio-chip").h(20).w(180).px(7).gap(5).items_center().border_1()
       .border_color(this.tuner.on() ? t.working : t.border).text_color(this.tuner.on() ? t.working : t.muted)
       .font_family("Share Tech Mono").text_size(11).cursor_pointer().hover(el => el.bg(t.hover))
-      .tooltip(`${state.error ? `${state.error} // ` : ""}Radio // ${name}${explicit ? " // Explicit content" : ""}`)
+      .tooltip(`${this.tuner.error || (!browser && state.error) ? `${this.tuner.error || state.error} // ` : ""}Radio // ${name}${browser ? ` // Opened in browser: ${browser.name}` : ""}${explicit ? " // Explicit content" : ""}`)
       .child(div().flex_none().child("RADIO"))
       .child(div().flex_1().min_w(0).truncate().child(name))
       .when(Boolean(explicit), el => el.child(div().id("radio-explicit").flex_none().text_size(9).text_color(t.done)

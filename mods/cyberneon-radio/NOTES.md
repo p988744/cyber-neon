@@ -244,3 +244,14 @@ with acknowledgment batches the full 1000-track contract is retained. The IPC
 check also gates a middle batch to verify serialization, immediate close while a
 request is pending, and full-queue replacement recovery after midqueue receiver
 loss. No receiver timeout or source count limit was raised or lowered.
+
+## Browser handoff (#11)
+
+The layout owner now supplies `localBrowser()` from `browser-host.js` as Tuner's
+optional third argument. Browser entries are intercepted by `Tuner.play` before
+`StationStore.prepare`; direct prepare calls continue to reject them. The existing
+final `beforePlay` hook still gates explicit warnings and dismissed actions before
+any stop/open effect. A handoff stops the local queue, retains the receiver for
+reuse, and never forwards that URL to mpv. Browser state/error presentation and
+policy evidence are documented in [UI.md](UI.md) and [BROWSER.md](BROWSER.md).
+The engine, queue batching, recovery and final-close lifecycle above are unchanged.
