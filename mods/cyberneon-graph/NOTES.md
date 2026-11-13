@@ -27,8 +27,6 @@
   date, parents, `n files changed, +a −d` from `git show --stat` (fetched once per hash; the email is read, never shown).
 - Tabs: `graph` button after `jobs` (`cyberneon-tabs/graph.svg`: a trunk, a branch line, two filled and one hollow diamond),
   and `"graph"` always added to `enabled` like `"jobs"`.
-- Shot `research/v6-shots/graph.png` used a temporary `where()` override in the installed copy only (the focused pane was
-  another project). **Removed**: the installed copy matches the project (`diff -r`). Panel was put back on Jobs.
 - Seen live since: see "Live check (issue #2)" below.
 
 ## Fix: ref chips no longer clip
