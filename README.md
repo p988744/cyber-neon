@@ -6,7 +6,7 @@ A Herdr Desktop layout inspired by the user interface of Cyberpunk 2077: red-on-
 
 ![Cyber-Neon](preview.png)
 
-Version 0.4.1 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan work
+Version 0.4.2 · Apache-2.0 · for Herdr App 0.1.15 or later · unofficial fan work
 
 ## What you get
 

@@ -294,7 +294,8 @@ export default class Jobs extends View {
   dispatch(job, cx, cache) {
     const { wt, on, repo, main } = this.ctx;
     const argv = this.argvFor(), branch = issueBranch(job.number, job.title), path = `${wt}/${branch}`;
-    const m = cache?.milestones?.find((x) => x.number === cache.milestone), lead = m ? this.leadFor(m.number) : null;
+    // Only a main job (an issue in the selected milestone) goes under that milestone's lead; a side job gets its own tab.
+    const m = job.main ? cache?.milestones?.find((x) => x.number === cache.milestone) : null, lead = m ? this.leadFor(m.number) : null;
     this.act(job, cx, async () => {
       const err = await this.worktree(branch, "HEAD");
       if (err) return err;
@@ -312,12 +313,16 @@ export default class Jobs extends View {
       if (r.code !== 0) return (r.stderr || "hc run failed").trim().split("\n")[0].slice(0, 80);
       let addr = name;
       try { addr = JSON.parse(r.stdout).address ?? name; } catch {}
-      run("terminal.keep", { terminal: addr });
-      // The task waits until the agent says it's idle (typed earlier it would land in the shell).
+      // The task waits until the agent says it's idle (typed earlier it would land in the shell). The tab comes after:
+      // right after hc run the app may not know the terminal yet ("no running terminal"), but it does once it's idle.
       for (let i = 0; i < 45; i++) {
-        if ((await exec("hc", ["send", "--if", "idle", addr, task], { timeout: 10_000 }).catch(() => ({ code: 1 }))).code === 0) return "";
+        if ((await exec("hc", ["send", "--if", "idle", addr, task], { timeout: 10_000 }).catch(() => ({ code: 1 }))).code === 0) {
+          run("terminal.keep", { terminal: addr });
+          return "";
+        }
         await sleep(2);
       }
+      run("terminal.keep", { terminal: addr });
       return `agent never went idle; send the task by hand (hc send ${addr} …)`;
     });
   }
