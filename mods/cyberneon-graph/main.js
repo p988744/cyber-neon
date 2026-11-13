@@ -1,15 +1,17 @@
 import { View, div, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex, Popup } from "gpui-base";
-import { panes, spaces, exec, shared, theme, watchFolder } from "herdr";
+import { panes, spaces, exec, shared, theme, watchFolder, settings } from "herdr";
 import { lanes, parseLog, parseShow, ago } from "./graph.js";
 
 // GRAPH page in the right panel: the focused repo's commit graph, local and read-only (git log/show only).
 const MONO = "Share Tech Mono";
 const LABEL = "Chakra Petch";
 const W = globalThis.window; // herdr's window() shadows the paint_path host
-const ROW = 24, LANE = 12, GX = 4, MAXL = 16, N = 300;
+const ROW = 24, LANE = 12, GX = 4, MAXL = 16, N = 300, CHIP = 96;
 const COLORS = ["accent", "working", "done", "ansi5", "ansi9", "ansi6"];
 const anim = () => shared("cyberneon.animations") !== false;
+// on_size_change and wheel deltas come in zoomed pixels; layout units (ROW, …) are unzoomed.
+const zoom = () => Number(settings().zoom) || 1;
 const notch = (c) => PathBuilder.fill().add_polygon([[c, 0], ["100%", 0], ["100%", "100%"], [0, "100%"], [0, c]], true).build();
 const notchEdge = (c) => PathBuilder.stroke(1).add_polygon([[c, 0.5], ["100%", 0.5], ["100%", "100%"], [0.5, "100%"], [0.5, c]], true).build();
 // Read-only git: never takes optional locks and never starts fsmonitor, so nothing is written under .git.
@@ -139,9 +141,10 @@ export default class Graph extends View {
     });
   }
 
-  disarm(hash) {
+  // Pointer left the row: close its card now (render only runs on notify).
+  disarm(hash, cx) {
     if (this.arming === hash) this.arming = null;
-    if (this.card === hash) this.card = null;
+    if (this.card === hash) { this.card = null; cx.notify(); }
   }
 
   render(cx) {
@@ -186,9 +189,9 @@ export default class Graph extends View {
     const rows = [];
     for (let i = first; i <= last; i++) rows.push(this.row(t, commits[i], view.rows[i], i, gw));
     const box = div().id("graph-view").relative().flex_1().min_h(0).mt(4).overflow_hidden()
-      .on_size_change((size, cx) => { if (size.height !== this.vh) { this.vh = size.height; cx.notify(); } })
+      .on_size_change((size, cx) => { const h = size.height / zoom(); if (h !== this.vh) { this.vh = h; cx.notify(); } })
       .on_scroll_wheel((e, cx) => {
-        const y = Math.min(Math.max(0, this.scrollY - e.delta.y), max);
+        const y = Math.min(Math.max(0, this.scrollY - e.delta.y / zoom()), max);
         if (y !== this.scrollY) { this.scrollY = y; this.arming = null; this.card = null; cx.notify(); }
       })
       .children(rows)
@@ -240,16 +243,17 @@ export default class Graph extends View {
     return out;
   }
 
+  // Each chip is at most CHIP px wide and truncates its name (long remote branches pushed the subject out).
   refChip(t, ref) {
-    if (ref.kind === "tag") return div().flex_none().font_family(MONO).text_size(9.5).text_color(t.done).child(`◆ ${ref.name}`);
-    if (ref.kind === "remote") return div().flex_none().h(14).px(4).flex().items_center().border(1).border_color(t.dim)
-      .font_family(MONO).text_size(9.5).text_color(t.dim).child(ref.name);
+    const name = (text) => div().relative().min_w(0).truncate().child(text);
+    if (ref.kind === "tag") return div().flex_none().max_w(CHIP).flex().font_family(MONO).text_size(9.5).text_color(t.done).child(name(`◆ ${ref.name}`));
+    if (ref.kind === "remote") return div().flex_none().max_w(CHIP).h(14).px(4).flex().items_center().border(1).border_color(t.dim)
+      .font_family(MONO).text_size(9.5).text_color(t.dim).child(name(ref.name));
     // Local branch (and the HEAD tag): yellow, 4px top-left cut; the current branch adds an accent edge.
-    return div().relative().flex_none().h(14).px(5).flex().items_center()
+    return div().relative().flex_none().max_w(CHIP).h(14).px(5).flex().items_center()
       .child(W.paint_path(notch(4), t.solid).absolute().top(0).left(0).size_full())
       .when(Boolean(ref.current), (el) => el.child(W.paint_path(notchEdge(4), t.accent).absolute().top(0).left(0).size_full()))
-      .child(div().relative().font_family(LABEL).font_weight(600).text_size(9.5).text_color(t.solid_foreground)
-        .child(ref.kind === "head" ? "HEAD" : ref.name.toUpperCase()));
+      .child(name(ref.kind === "head" ? "HEAD" : ref.name.toUpperCase()).font_family(LABEL).font_weight(600).text_size(9.5).text_color(t.solid_foreground));
   }
 
   row(t, c, r, i, gw) {
@@ -259,10 +263,10 @@ export default class Graph extends View {
     const flash = this.copied?.hash === c.hash;
     return h_flex().id(`row-${c.hash}`).absolute().left(0).right(0).top(i * ROW - this.scrollY).h(ROW).pl(gw).pr(6).gap(6).items_center()
       .cursor_pointer().hover((s) => s.bg(t.hover))
-      .on_hover((h) => (h ? this.arm(c.hash) : this.disarm(c.hash)))
+      .on_hover((h, cx) => (h ? this.arm(c.hash) : this.disarm(c.hash, cx)))
       .on_click((_e, cx) => this.copy(c.hash, cx))
-      // Chips give way first (clipped), so the subject keeps at least 80px.
-      .when(isHead || shown.length > 0, (el) => el.child(h_flex().flex_none().gap(6).items_center()
+      // Chips are capped (CHIP each); only if they still don't fit does the group clip, so the subject keeps 40px.
+      .when(isHead || shown.length > 0, (el) => el.child(h_flex().min_w(0).overflow_hidden().gap(6).items_center()
         .when(isHead, (el) => el.child(this.refChip(t, { kind: "head" })))
         .children(shown.map((f) => this.refChip(t, f)))
         .when(refs.length > shown.length, (el) => el.child(div().flex_none().font_family(MONO).text_size(9).text_color(t.dim).child(`+${refs.length - shown.length}`)))))
