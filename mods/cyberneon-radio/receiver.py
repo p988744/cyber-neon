@@ -108,7 +108,9 @@ def serve(root, mpv):
 
 
 def start(root):
-    mpv = shutil.which("mpv")
+    # Windows distributions also ship mpv.com, a console wrapper that launches
+    # another process. Own the actual pipe server directly, never its wrapper.
+    mpv = shutil.which("mpv.exe" if os.name == "nt" else "mpv")
     if not mpv:
         raise RuntimeError("NO RECEIVER // install mpv")
     prepare(root)
