@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 const dir = await mkdtemp(join(tmpdir(), "radio-ui-check-"));
 try {
-  for (const name of ["engine.js", "bridge.js", "receiver-client.js", "ipc.js", "tuner.js", "ducking.js", "stations.js", "search.js", "search-client.js", "search-ui.js", "browser.js", "browser-host.js", "mod.json"])
+  for (const name of ["engine.js", "bridge.js", "token.js", "receiver-client.js", "ipc.js", "tuner.js", "ducking.js", "stations.js", "search.js", "search-client.js", "search-ui.js", "browser.js", "browser-host.js", "mod.json"])
     await copyFile(new URL(name, import.meta.url), join(dir, name));
   await writeFile(join(dir, "station-storage.js"), `export function localStations() { return { snapshot: () => ({stations: [], loading: false, error: null, path: '/test/stations.json'}), refresh: async () => {} }; }`);
   const source = (await readFile(new URL("main.js", import.meta.url), "utf8")).replace("export default class Radio", "class Radio");
