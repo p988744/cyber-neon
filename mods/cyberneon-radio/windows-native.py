@@ -70,10 +70,11 @@ class SecurityAttributes(C.Structure):
 
 def prepare(root):
     # Protected DACL, inherited by markers; only the current user gets access.
-    sddl = 'D:P(A;OICI;FA;;;' + user_sid() + ')'
+    sid = user_sid()
+    sddl = 'D:P(A;OICI;FA;;;' + sid + ')'
     descriptor = C.c_void_p()
     checked(api(advapi, 'ConvertStringSecurityDescriptorToSecurityDescriptorW', W.BOOL,
-                W.LPCWSTR, W.DWORD, C.POINTER(C.c_void_p), C.c_void_p)(sddl, 1, C.byref(descriptor), None))
+                W.LPCWSTR, W.DWORD, C.POINTER(C.c_void_p), C.c_void_p)("O:" + sid + sddl, 1, C.byref(descriptor), None))
     try:
         attrs = SecurityAttributes(C.sizeof(SecurityAttributes), descriptor, False)
         create = api(kernel, 'CreateDirectoryW', W.BOOL, W.LPCWSTR, C.POINTER(SecurityAttributes))
@@ -96,7 +97,7 @@ def prepare(root):
     owner_text = W.LPWSTR()
     try:
         checked(api(advapi, 'ConvertSidToStringSidW', W.BOOL, C.c_void_p, C.POINTER(W.LPWSTR))(owner, C.byref(owner_text)))
-        if owner_text.value != user_sid():
+        if owner_text.value != sid:
             raise ValueError("Receiver directory must be owned by this user")
         checked(api(advapi, 'ConvertSecurityDescriptorToStringSecurityDescriptorW', W.BOOL,
                     C.c_void_p, W.DWORD, W.DWORD, C.POINTER(W.LPWSTR), C.c_void_p)(descriptor, 1, 4, C.byref(text), None))

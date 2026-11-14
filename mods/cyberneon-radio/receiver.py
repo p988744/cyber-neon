@@ -88,9 +88,9 @@ def serve(root, mpv):
                     (root / "ready").touch(exist_ok=True)
             time.sleep(0.05)
         if player.poll() is not None and not (root / "ready").exists():
-            (root / "error").write_text("mpv exited before opening IPC")
+            (root / "error").write_text("mpv exited before opening IPC", encoding="utf-8")
     except Exception as error:
-        (root / "error").write_text(str(error))
+        (root / "error").write_text(str(error), encoding="utf-8")
     finally:
         if player is not None and player.poll() is None:
             player.terminate()
@@ -126,7 +126,7 @@ def start(root):
         if (root / "closed").exists():
             raise RuntimeError("Receiver closed")
         if (root / "error").exists():
-            raise RuntimeError((root / "error").read_text())
+            raise RuntimeError((root / "error").read_text(encoding="utf-8"))
         if (root / "ready").exists():
             return
         time.sleep(0.025)
