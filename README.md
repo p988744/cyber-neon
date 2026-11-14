@@ -56,7 +56,7 @@ with an optional browser handoff for services that stay in their own player.
    ```
 
    macOS, Linux and Windows are supported. Local `mpv` and `python3` must be on
-   Herdr's PATH (`mpv.exe` and a working `python3.exe` on Windows). On Windows,
+   Herdr's PATH (`mpv.exe` and Python 3.12+ as `python3.exe` on Windows). On Windows,
    install mpv from its [installation page](https://mpv.io/installation/) and
    verify `python3 --version` and `mpv --version` in the environment used to launch
    Herdr, then restart Herdr after PATH changes. A Windows browser-only station
