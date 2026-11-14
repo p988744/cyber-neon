@@ -191,11 +191,13 @@ export default class Radio extends View {
 
   // Equalizer made of block characters. Moves only while audio is actually
   // playing and ANIM is on; otherwise a flat line.
-  wave(t, frames, width, period, size) {
+  // Block glyphs differ in advance width, so the bars get a fixed-width box:
+  // whatever frame is showing, neighbouring text never shifts.
+  wave(t, frames, width, period, size, box) {
     const state = this.engine.snapshot();
     const live = this.tuner.on() && state.status === "playing";
     const bars = div().font_family("Share Tech Mono").text_size(size).text_color(live ? t.working : t.dim)
-      .whitespace_nowrap().child(live ? frames[0] : idleWave(width));
+      .whitespace_nowrap().overflow_hidden().flex_none().w(box).child(live ? frames[0] : idleWave(width));
     return live && anim() ? bars.frames(frames, period) : bars;
   }
 
@@ -228,7 +230,7 @@ export default class Radio extends View {
         .child(`Explicit content${this.warning ? ` // ${warning.name}` : ""}${warning.contentWarning && warning.contentWarning !== "Explicit content" ? ` // ${warning.contentWarning}` : ""}`)))
       .when(Boolean(station?.note), el => el.child(div().child(station.note)))
       .child(line)
-      .child(this.wave(t, PANEL_WAVE, 36, 90, 13))
+      .child(this.wave(t, PANEL_WAVE, 36, 90, 13, 296))
       .when(Boolean(station?.open), el => el.child(div().text_color(t.dim).child("BROWSER ONLY // opens outside Herdr")))
       .when(Boolean(browser), el => el.child(div().id("radio-browser-opened").text_color(t.muted)
         .child(`OPENED IN BROWSER // ${browser.name}. Playback is managed in your browser.`)))
@@ -284,7 +286,7 @@ export default class Radio extends View {
       .font_family("Share Tech Mono").text_size(11).cursor_pointer().hover(el => el.bg(t.hover))
       .tooltip(`${this.tuner.error || (!browser && state.error) ? `${this.tuner.error || state.error} // ` : ""}Radio // ${name}${browser ? ` // Opened in browser: ${browser.name}` : ""}${explicit ? " // Explicit content" : ""}`)
       .child(div().flex_none().child("RADIO"))
-      .child(this.wave(t, CHIP_WAVE, 5, 110, 10).id("radio-chip-wave").flex_none())
+      .child(this.wave(t, CHIP_WAVE, 5, 110, 10, 34).id("radio-chip-wave"))
       .child(div().flex_1().min_w(0).truncate().child(name))
       .when(Boolean(explicit), el => el.child(div().id("radio-explicit").flex_none().text_size(9).text_color(t.done)
         .tooltip("Explicit content").child("EXPLICIT")));
