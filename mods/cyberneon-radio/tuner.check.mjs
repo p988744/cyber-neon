@@ -90,3 +90,15 @@ assert.deepEqual(other.calls, []);
 assert.equal(staticFrames().length, 7);
 assert.equal(new Set(staticFrames()).size > 1, true);
 console.log("tuner state checks passed");
+
+// Equalizer frames: fixed width, looping, moving, deterministic and block-only.
+{
+  const { waveFrames, idleWave } = await import("./tuner.js");
+  const frames = waveFrames(36, 12);
+  assert.equal(frames.length, 12);
+  assert.ok(frames.every(f => [...f].length === 36 && /^[▁▂▃▄▅▆▇█]+$/.test(f)));
+  assert.ok(new Set(frames).size > 6, "bars must move between frames");
+  assert.ok(new Set([...frames[0]]).size > 3, "bars must differ across a frame");
+  assert.deepEqual(waveFrames(5), waveFrames(5));
+  assert.equal(idleWave(5), "▁▁▁▁▁");
+}

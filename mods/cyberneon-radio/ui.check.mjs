@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { Ducking } from "./ducking.js";
-import { Tuner, staticFrames } from "./tuner.js";
+import { Tuner, staticFrames, waveFrames, idleWave } from "./tuner.js";
 import { RadioSearch, SEARCH_TAGS } from "./search.js";
 import { StationStore } from "./stations.js";
 let animations = true;
@@ -24,7 +24,7 @@ const host = {
   View: class {}, div: () => new Element(), h_flex: () => new Element(), v_flex: () => new Element(),
   Popover: part, Slider: part, SliderTrack: part, SliderIndicator: part, SliderThumb: part,
   Input: part, InputState: { new: () => ({ text: "", handlers: {}, on(event, fn) { this.handlers[event] = fn; }, value() { return this.text; }, set_value(text) { this.text = text; }, focus() {}, release() {} }) },
-  theme: () => ({}), shared: () => animations, staticFrames, Tuner, RadioSearch, SEARCH_TAGS,
+  theme: () => ({}), shared: () => animations, staticFrames, waveFrames, idleWave, Tuner, RadioSearch, SEARCH_TAGS,
   localDirectory: () => ({ search: async () => [] }),
   Ducking,
   localBrowser: () => async () => {},
@@ -82,6 +82,19 @@ stations.length = 0;
 assert.ok(texts().includes("ON AIR // Fixture One"));
 assert.ok(texts().includes("Explicit content")); // keep warning for removed playing station
 stations.push(view.tuner.playing);
+// Equalizer: chip and panel move only while actually playing with ANIM on.
+const byId = id => nodes().find(n => n.calls.some(([k, v]) => k === "id" && v === id));
+const framesOf = node => node?.calls.find(([k]) => k === "frames");
+assert.equal(framesOf(byId("radio-chip-wave"))?.[1].length, 12);
+assert.ok(nodes().some(n => framesOf(n)?.[1][0].length === 36), "panel shows the full-width wave");
+// Fixed-width boxes: a frame's glyph widths can never move neighbouring text.
+assert.deepEqual(byId("radio-chip-wave").calls.find(([k]) => k === "w").slice(1), [34]);
+assert.ok(byId("radio-chip-wave").calls.some(([k]) => k === "overflow_hidden"));
+assert.ok(nodes().some(n => framesOf(n)?.[1][0].length === 36 && n.calls.some(([k, v]) => k === "w" && v === 296)));
+state.status = "paused";
+assert.equal(framesOf(byId("radio-chip-wave")), undefined);
+assert.ok(byId("radio-chip-wave").items.includes(idleWave(5)));
+state.status = "playing";
 animations = false;
 assert.equal(hasCall("frames"), false);
 assert.equal(hasCall("loop"), false);
@@ -93,6 +106,18 @@ for (const [id, action] of [["radio-next", "next"], ["radio-prev", "prev"], ["ra
   node.calls.find(([key]) => key === "on_click")[1]({}, {});
   assert.equal(actionCalls.at(-1)[0], action);
 }
+// Pin: outside clicks (open=false) are ignored only while pinned; x unpins and closes.
+view.open = true; view.pinned = false;
+const openChange = () => nodes().find(n => n.calls.some(([k]) => k === "on_open_change")).calls.find(([k]) => k === "on_open_change")[1];
+byId("radio-pin").calls.find(([k]) => k === "on_click")[1]({}, { notify() {} });
+assert.equal(view.pinned, true); assert.equal(saved.get("pinned"), "on");
+openChange()(false, { notify() {} });
+assert.equal(view.open, true, "pinned tuner stays open");
+byId("radio-close").calls.find(([k]) => k === "on_click")[1]({}, { notify() {} });
+assert.equal(view.pinned, false); assert.equal(saved.get("pinned"), "off"); assert.equal(view.open, false);
+view.open = true; openChange()(false, { notify() {} });
+assert.equal(view.open, false, "unpinned tuner dismisses on outside click");
+view.open = false;
 // Toggle uses the actual controller; it stays available while tuning and
 // persists only the preference, never temporary gain or a playback action.
 view.ducking = new Ducking(engine);

@@ -122,6 +122,18 @@ export class Tuner {
 }
 
 // Deterministically generated visual interference, never an audio asset.
+// Text equalizer frames for Element.frames(): `width` bars, `count` frames that
+// loop seamlessly. Deterministic; idle() is the flat bar shown when nothing plays.
+const BARS = "▁▂▃▄▅▆▇█";
+export function waveFrames(width, count = 12) {
+  return Array.from({ length: count }, (_, f) => Array.from({ length: width }, (_, i) => {
+    const a = f / count * Math.PI * 2;
+    const level = (Math.sin(i * 0.9 + a) + Math.sin(i * 0.37 - a * 2) + Math.sin(i * 1.7 + a * 3) + 3) / 6;
+    return BARS[Math.max(0, Math.min(BARS.length - 1, Math.round(level * (BARS.length - 1))))];
+  }).join(""));
+}
+export const idleWave = width => BARS[0].repeat(width);
+
 export function staticFrames() {
   return Array.from({ length: 7 }, (_, f) => Array.from({ length: 36 }, (_, i) =>
     ["░", "▒", "·", "│"][(i * 13 + f * 7 + (i ^ f)) % 4]).join(""));
