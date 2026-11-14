@@ -31,7 +31,9 @@ jobs:
           $mpvDir = Join-Path $env:RUNNER_TEMP 'radio-mpv'
           7z x $archive "-o$mpvDir" -y
           if ($LASTEXITCODE -ne 0) { throw 'mpv extraction failed' }
-          $mpvDir >> $env:GITHUB_PATH
+          $mpv = Get-ChildItem $mpvDir -Recurse -Filter mpv.exe | Select-Object -First 1
+          if (-not $mpv) { throw 'mpv.exe missing from verified archive' }
+          $mpv.DirectoryName >> $env:GITHUB_PATH
           # Test fixture only: exercise the user's python3 executable contract.
           $python = (Get-Command python).Source
           $python3 = Join-Path (Split-Path $python) 'python3.exe'

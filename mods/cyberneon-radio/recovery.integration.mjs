@@ -1,4 +1,4 @@
-import { sessionRoot } from "./test-platform.mjs";
+import { sessionRoot, silentReceiver } from "./test-platform.mjs";
 // node mods/cyberneon-radio/recovery.integration.mjs (requires local python3 + mpv)
 // Actual engine + actual bridge client + guardian + mpv; generated silence only.
 import assert from "node:assert/strict";
@@ -37,6 +37,7 @@ const bridge = receiverClient({ script, newToken: () => {
   if (gate && args[1] === "start") { const current = gate; gate = null; current.enter(); await current.wait; }
   return exec(program, args, options);
 } });
+silentReceiver(bridge);
 const engine = new RadioEngine(bridge);
 const folder = await mkdtemp(join(tmpdir(), "radio-recovery-"));
 try {

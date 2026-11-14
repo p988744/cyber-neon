@@ -86,18 +86,25 @@ def prepare(root):
         raise ValueError('Receiver directory must be private, without reparse points')
     # Do not repair/adopt an existing directory with a different ACL.
     descriptor = C.c_void_p()
+    owner = C.c_void_p()
     code = api(advapi, 'GetNamedSecurityInfoW', W.DWORD, W.LPWSTR, C.c_int, W.DWORD,
                C.c_void_p, C.c_void_p, C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p))(
-                   str(root), 1, 4, None, None, None, None, C.byref(descriptor))
+                   str(root), 1, 5, C.byref(owner), None, None, None, C.byref(descriptor))
     if code:
         raise C.WinError(code)
     text = W.LPWSTR()
+    owner_text = W.LPWSTR()
     try:
+        checked(api(advapi, 'ConvertSidToStringSidW', W.BOOL, C.c_void_p, C.POINTER(W.LPWSTR))(owner, C.byref(owner_text)))
+        if owner_text.value != user_sid():
+            raise ValueError("Receiver directory must be owned by this user")
         checked(api(advapi, 'ConvertSecurityDescriptorToStringSecurityDescriptorW', W.BOOL,
                     C.c_void_p, W.DWORD, W.DWORD, C.POINTER(W.LPWSTR), C.c_void_p)(descriptor, 1, 4, C.byref(text), None))
         if text.value != sddl:
             raise ValueError('Receiver directory must be private and owned by this user')
     finally:
+        if owner_text:
+            LocalFree(owner_text)
         if text:
             LocalFree(text)
         LocalFree(descriptor)

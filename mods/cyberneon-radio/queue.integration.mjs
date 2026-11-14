@@ -1,4 +1,4 @@
-import { sessionRoot } from "./test-platform.mjs";
+import { sessionRoot, silentReceiver } from "./test-platform.mjs";
 // node mods/cyberneon-radio/queue.integration.mjs — real mpv, generated silence only
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -22,6 +22,7 @@ function exec(program, args, options = {}) {
 const bridge = receiverClient({ script, exec, newToken: () => {
   const token = randomBytes(16).toString("hex"); tokens.push(token); return token;
 } });
+silentReceiver(bridge);
 const engine = new RadioEngine(bridge);
 const folder = await mkdtemp(join(tmpdir(), "radio-queue-"));
 try {

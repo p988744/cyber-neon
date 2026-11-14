@@ -1,4 +1,4 @@
-import { sessionRoot } from "./test-platform.mjs";
+import { sessionRoot, silentReceiver } from "./test-platform.mjs";
 // Native receiver adapter + real mpv. Generated silence, scratch sessions only.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -21,6 +21,7 @@ const exec = (program, args, options = {}) => new Promise((resolve, reject) =>
 const bridge = receiverClient({ exec, script, newToken: () => {
   const token = randomBytes(16).toString("hex"); tokens.push(token); return token;
 } });
+silentReceiver(bridge);
 const engine = new RadioEngine(bridge), duck = new Ducking(engine);
 const folder = await mkdtemp(join(tmpdir(), "radio-duck-"));
 const media = join(folder, "silent.wav"), station = { name: "Silence fixture", url: media };

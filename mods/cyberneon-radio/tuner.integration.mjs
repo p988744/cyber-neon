@@ -1,4 +1,4 @@
-import { sessionRoot } from "./test-platform.mjs";
+import { sessionRoot, silentReceiver } from "./test-platform.mjs";
 // Actual #8 localStations adapter + UI controller + engine/bridge/mpv.
 // Scratch config and generated silence only; never touch the user's config/app.
 import assert from "node:assert/strict";
@@ -24,6 +24,7 @@ const exec = (program, args, options = {}) => new Promise((resolve, reject) =>
   }));
 const bridge = receiverClient({ exec, script: fileURLToPath(new URL("receiver.py", import.meta.url)),
   newToken: () => { const token = randomBytes(16).toString("hex"); tokens.push(token); return token; } });
+silentReceiver(bridge);
 const engine = new RadioEngine(bridge), ducking = new Ducking(engine);
 let clock = 1000;
 const observe = status => ducking.observe([], [{ address: "fixture/t1", state: "live", status }], clock++);

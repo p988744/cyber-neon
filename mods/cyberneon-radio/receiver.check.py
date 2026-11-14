@@ -104,6 +104,7 @@ try:
         token, root = session()
         call("start", token)
         pid = int((root / "pid").read_text())
+        assert request(token, [["set_property", "options/ao", "null"]])[0]["error"] == "success"
         for _ in range(2):
             replies = request(token, [["loadfile", str(media), "replace"], ["set_property", "pause", True],
                                       ["set_property", "volume", 23], ["set_property", "mute", True]])
@@ -111,7 +112,15 @@ try:
             time.sleep(0.1)
             replies = request(token, [["get_property", p] for p in ["pause", "volume", "mute", "media-title", "metadata"]])
             assert [r.get("data") for r in replies[:3]] == [True, 23, True], replies
-            assert replies[3]["data"], replies
+            title = None
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                response = request(token, [["get_property", "media-title"]])[0]
+                title = response.get("data")
+                if title:
+                    break
+                time.sleep(.025)
+            assert title == media.name, (title, response)
             assert replies[4]["error"] in ("success", "property unavailable"), replies
             request(token, [["stop"]])
             assert int((root / "pid").read_text()) == pid, "Stop/play must reuse mpv"
