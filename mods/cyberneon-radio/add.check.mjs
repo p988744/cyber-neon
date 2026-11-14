@@ -8,7 +8,7 @@ import { once } from "node:events";
 import { Tuner } from "./tuner.js";
 import { promisify } from "node:util";
 const exec = promisify(execFile);
-const root = await mkdtemp(join(tmpdir(), "radio-panel-add-"));
+const root = await mkdtemp(join(tmpdir(), "radio-panel-add-音樂 "));
 const folder = join(root, "mods/cyberneon-radio");
 const manual = { name: "Manual", url: "~/Music", extra: { keep: true } };
 const row = { name: "NEU RADIO", url: "https://example.invalid/live", country: "Italy", codec: "MP3", bitrate: 128, lastcheckok: 1 };
@@ -157,7 +157,7 @@ try {
   }
   // Actual POSIX lock contention: the production 5s exec timeout kills only
   // this scratch helper; error is visible and the same panel can retry.
-  {
+  if (process.platform !== "win32") {
     const { panel, ctx, unchanged } = await fixture();
     const holder = spawn("python3", ["-u", "-c", 'import fcntl,sys,time; f=open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); print("locked", flush=True); time.sleep(30)', join(root, "radio.json.lock")]);
     try {
@@ -170,6 +170,6 @@ try {
     } finally { const exited = once(holder, "exit"); holder.kill(); await exited; }
     click(panel, "radio-add-0", ctx.cx); await Promise.all(ctx.tasks);
     assert.ok(texts(panel).includes("SAVED")); unchanged();
-  }
+  } else console.log("add.check: POSIX flock probe skipped on Windows; portable Add cases run above");
   console.log("add.check ok (actual panel -> model -> store -> adapter/Python; rendered SAVED, stale refresh, errors, deadlines, retry)");
 } finally { delete globalThis.__addHost; await rm(root, { recursive: true, force: true }); }

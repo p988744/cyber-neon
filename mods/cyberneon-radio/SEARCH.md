@@ -119,3 +119,8 @@ refresh never settles. This demonstrates the unbounded dependency, not why the
 reporting macOS host's promise stalled. An isolated native check with deferred
 sleep/exec did not run its completion sentinel; `herdr-app check` cannot establish
 native async correctness. The reporting installation still needs a live retest.
+The platform suite runs the Add regression on native Windows and Linux CI,
+including Unicode scratch paths, success, stale refreshes, deadlines, errors and
+retries. Only the real POSIX `flock` probe is skipped on Windows; portable
+timeout/error coverage still runs there. The merged Windows storage/transport
+checks run in the same suite.
