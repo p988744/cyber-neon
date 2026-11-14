@@ -16,7 +16,8 @@ for (const platform of ["macos", "linux"]) {
   assert.equal(calls.length, before);
 }
 assert.equal(browserURL("HTTPS://EXAMPLE.invalid"), "https://example.invalid/");
-await assert.rejects(browserOpener({ exec, platform: "windows" })(url), /macOS and Linux/);
+assert.equal(await browserOpener({ exec, platform: "windows", script: "browser-open.py" })(url), url);
+assert.deepEqual(calls.at(-1), ["python3", ["browser-open.py", url], { timeout: 5000 }]);
 await assert.rejects(browserOpener({ exec: async () => ({ code: 1, stderr: "no browser" }), platform: "linux" })(url), /no browser/);
 await assert.rejects(browserOpener({ exec: async () => ({ code: 1 }), platform: "macos" })(url), /Cannot open/);
 await assert.rejects(browserOpener({ exec: async () => { throw new Error("timeout"); }, platform: "macos" })(url), /timeout/);

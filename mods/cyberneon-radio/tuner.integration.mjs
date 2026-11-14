@@ -1,3 +1,4 @@
+import { sessionRoot, silentReceiver } from "./test-platform.mjs";
 // Actual #8 localStations adapter + UI controller + engine/bridge/mpv.
 // Scratch config and generated silence only; never touch the user's config/app.
 import assert from "node:assert/strict";
@@ -5,7 +6,7 @@ import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, mkdir, copyFile, writeFile, readFile, access, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Tuner } from "./tuner.js";
 import { RadioEngine } from "./engine.js";
@@ -14,7 +15,7 @@ import { command } from "./ipc.js";
 import { Ducking } from "./ducking.js";
 import { RadioSearch } from "./search.js";
 
-const root = await realpath(await mkdtemp(join(tmpdir(), "radio-tuner-")));
+const root = await realpath(await mkdtemp(join(tmpdir(), "radio-tuner-音樂 ")));
 const tokens = [];
 const exec = (program, args, options = {}) => new Promise((resolve, reject) =>
   execFile(program, args, { timeout: options.timeout ?? 7000 }, (error, stdout, stderr) => {
@@ -23,6 +24,7 @@ const exec = (program, args, options = {}) => new Promise((resolve, reject) =>
   }));
 const bridge = receiverClient({ exec, script: fileURLToPath(new URL("receiver.py", import.meta.url)),
   newToken: () => { const token = randomBytes(16).toString("hex"); tokens.push(token); return token; } });
+silentReceiver(bridge);
 const engine = new RadioEngine(bridge), ducking = new Ducking(engine);
 let clock = 1000;
 const observe = status => ducking.observe([], [{ address: "fixture/t1", state: "live", status }], clock++);
@@ -40,7 +42,7 @@ try {
   const store = localStations(), tuner = new Tuner(engine, store, async url => { opened.push(url); });
   tuner.setVolumeControl(ducking);
   await observe("working");
-  assert.equal(store.snapshot().path, join(root, "radio.json"));
+  assert.equal(normalize(store.snapshot().path), join(root, "radio.json"));
   await store.refresh();
   assert.equal(tuner.station(), null);
   assert.deepEqual(tokens, []);
@@ -50,10 +52,10 @@ try {
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
   wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32);
   wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(wav.length - 44, 40);
-  const first = join(root, "tracks/01.wav"), second = join(root, "tracks/02.wav");
+  const first = join(root, "tracks/01 音樂.wav"), second = join(root, "tracks/02 音樂.wav");
   await writeFile(first, wav); await writeFile(second, wav);
-  const stations = [{ name: "Synthetic folder", url: "tracks", explicit: true },
-    { name: "Synthetic file", url: "tracks/02.wav" }, { name: "Synthetic browser", open: "https://example.invalid" }];
+  const stations = [{ name: "音樂 folder", url: "tracks", explicit: true },
+    { name: "Synthetic file", url: "tracks/02 音樂.wav" }, { name: "Synthetic browser", open: "https://example.invalid" }];
   await writeFile(join(root, "radio.json"), JSON.stringify(stations));
   await store.refresh();
   assert.equal(tuner.station().contentWarning, "Explicit content");
@@ -72,7 +74,7 @@ try {
   assert.deepEqual(tokens, [], "explicit warning precedes receiver allocation/load");
   showWarning(true); await play;
   assert.equal(tuner.error, null); assert.equal(engine.snapshot().error, null);
-  assert.equal(tuner.playing.name, "Synthetic folder");
+  assert.equal(tuner.playing.name, "音樂 folder");
   assert.equal(engine.snapshot().volume, 17); assert.equal(engine.snapshot().muted, true);
   let queue = await bridge.request(command("get", "playlist"));
   assert.deepEqual(queue[0].data.map(p => p.filename), [first, second]);
@@ -110,7 +112,7 @@ try {
   await search.add(result);
   assert.ok(search.snapshot().error, "Add reports the malformed disk edit without replacing it");
   assert.equal(await readFile(join(root, "radio.json"), "utf8"), "[");
-  const manual = { name: "Unsynchronized manual edit", url: "tracks/01.wav", extra: { keep: true } };
+  const manual = { name: "Unsynchronized manual edit", url: "tracks/01 音樂.wav", extra: { keep: true } };
   await writeFile(join(root, "radio.json"), JSON.stringify([...stations, manual]));
   const selected = tuner.selected;
   await search.add(result);
@@ -139,10 +141,10 @@ try {
   for (const token of tokens) {
     await exec("python3", [fileURLToPath(new URL("receiver.py", import.meta.url)), "close", token]);
     for (let attempt = 0; attempt < 160; attempt++) {
-      try { await access(`/tmp/cnr-${token}/done`); break; } catch {}
+      try { await access(join(sessionRoot(token), "done")); break; } catch {}
       await new Promise(resolve => setTimeout(resolve, 25));
     }
-    await rm(`/tmp/cnr-${token}`, { recursive: true, force: true });
+    await rm(sessionRoot(token), { recursive: true, force: true });
   }
   await rm(root, { recursive: true, force: true });
 }

@@ -1,3 +1,4 @@
+import { sessionRoot, silentReceiver } from "./test-platform.mjs";
 // node mods/cyberneon-radio/recovery.integration.mjs (requires local python3 + mpv)
 // Actual engine + actual bridge client + guardian + mpv; generated silence only.
 import assert from "node:assert/strict";
@@ -13,7 +14,7 @@ import { command } from "./ipc.js";
 
 const script = fileURLToPath(new URL("./receiver.py", import.meta.url));
 const tokens = [];
-const root = (token = tokens.at(-1)) => `/tmp/cnr-${token}`;
+const root = (token = tokens.at(-1)) => sessionRoot(token);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const exists = async (path) => { try { await access(path); return true; } catch { return false; } };
 const gone = (pid) => { try { process.kill(pid, 0); return false; } catch (e) { if (e.code === "ESRCH") return true; throw e; } };
@@ -36,10 +37,11 @@ const bridge = receiverClient({ script, newToken: () => {
   if (gate && args[1] === "start") { const current = gate; gate = null; current.enter(); await current.wait; }
   return exec(program, args, options);
 } });
+silentReceiver(bridge);
 const engine = new RadioEngine(bridge);
 const folder = await mkdtemp(join(tmpdir(), "radio-recovery-"));
 try {
-  const media = join(folder, "silence.wav");
+  const media = join(folder, "音樂 silence.wav");
   const wav = Buffer.alloc(44 + 8000 * 2 * 60);
   wav.write("RIFF"); wav.writeUInt32LE(wav.length - 8, 4); wav.write("WAVEfmt ", 8);
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
@@ -66,6 +68,8 @@ try {
   await engine.play(media);
   assert.equal((await bridge.request(command("get", "playlist")))[0].data.length, 1, "single play replaces queue");
   assert.equal(engine.snapshot().status, "loading");
+  await engine.poll();
+  assert.equal(engine.snapshot().title, "音樂 silence.wav", "UTF-8 metadata survives Python piped stdout");
   await engine.volume(23); await engine.mute(true);
   const firstPid = await pid();
   // A real mpv command error must not retire the player.

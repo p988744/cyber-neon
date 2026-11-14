@@ -20,7 +20,7 @@ roots = []
 
 def session():
     token = uuid.uuid4().hex
-    root = Path("/tmp") / ("cnr-" + token)
+    root = Path(tempfile.gettempdir() if os.name == "nt" else "/tmp") / ("cnr-" + token)
     roots.append(root)
     return token, root
 
@@ -29,7 +29,7 @@ def call(action, token, payload=None, env=None, ok=True):
     args = [sys.executable, "-B", str(SCRIPT), action, token]
     if payload is not None:
         args.append(payload)
-    result = subprocess.run(args, capture_output=True, text=True, timeout=7, env=env)
+    result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", timeout=7, env=env)
     if ok:
         assert result.returncode == 0, result.stderr
     else:
@@ -43,6 +43,18 @@ def request(token, commands):
 
 
 def gone(pid):
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return True
+        kernel.CloseHandle(handle)
+        return False
     try:
         os.kill(pid, 0)
         return False
@@ -82,7 +94,7 @@ try:
     assert not (root / "ipc").exists()
 
     with tempfile.TemporaryDirectory(prefix="cn-radio-check-") as folder:
-        media = Path(folder) / 'silent "file".wav'
+        media = Path(folder) / 'silent 音樂 file.wav'
         with wave.open(str(media), "wb") as stream:
             stream.setnchannels(1)
             stream.setsampwidth(2)
@@ -92,6 +104,7 @@ try:
         token, root = session()
         call("start", token)
         pid = int((root / "pid").read_text())
+        assert request(token, [["set_property", "options/ao", "null"]])[0]["error"] == "success"
         for _ in range(2):
             replies = request(token, [["loadfile", str(media), "replace"], ["set_property", "pause", True],
                                       ["set_property", "volume", 23], ["set_property", "mute", True]])
@@ -99,7 +112,15 @@ try:
             time.sleep(0.1)
             replies = request(token, [["get_property", p] for p in ["pause", "volume", "mute", "media-title", "metadata"]])
             assert [r.get("data") for r in replies[:3]] == [True, 23, True], replies
-            assert replies[3]["data"], replies
+            title = None
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                response = request(token, [["get_property", "media-title"]])[0]
+                title = response.get("data")
+                if title:
+                    break
+                time.sleep(.025)
+            assert title == media.name, (title, response)
             assert replies[4]["error"] in ("success", "property unavailable"), replies
             request(token, [["stop"]])
             assert int((root / "pid").read_text()) == pid, "Stop/play must reuse mpv"

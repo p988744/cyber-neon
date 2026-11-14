@@ -11,12 +11,14 @@ export function browserURL(value) {
 
 // Injected by the layout owner; argument arrays never pass through a shell.
 // A successful opener acknowledges handoff, not live browser playback.
-export function browserOpener({ exec, platform }) {
+export function browserOpener({ exec, platform, script }) {
   return async value => {
     const url = browserURL(value);
     const command = platform === "macos" ? "open" : platform === "linux" ? "xdg-open" : null;
-    if (!command) throw new Error("Browser radio handoff supports macOS and Linux");
-    const result = await exec(command, [url], { timeout: 5000 });
+    if (!command && platform !== "windows") throw new Error("Unsupported browser handoff platform");
+    const result = platform === "windows"
+      ? await exec("python3", [script, url], { timeout: 5000 })
+      : await exec(command, [url], { timeout: 5000 });
     if (result.code !== 0) throw new Error(result.stderr?.trim() || "Cannot open browser station");
     return url;
   };

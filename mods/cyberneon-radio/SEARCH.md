@@ -59,7 +59,10 @@ the exact original bytes. It never emits nonstandard Infinity/NaN literals.
 
 Malformed files, limits (1000 stations, 1 MiB UTF-8), and symlinked configs fail
 without replacing the user's file. Writes use a temporary file in the same
-folder, fsync and atomic replace, retaining existing permission bits. External
+folder, fsync and atomic replace, retaining existing POSIX permission bits. On
+Windows, the replacement inherits the config folder's ACL; bounded nonblocking
+byte locking serializes Adds, and brief replacement-sharing conflicts retry
+within the helper timeout while rechecking current bytes. External
 edits detected immediately before replacement reject with a retry message.
 The advisory lock serializes app writers; arbitrary external editors do not take
 it, so an edit in the final compare/replace window cannot be excluded. No local

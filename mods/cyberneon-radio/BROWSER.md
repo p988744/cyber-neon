@@ -7,11 +7,13 @@ it must never fall back to mpv. `StationStore.prepare` continues to reject brows
 entries, including calls outside the tuner.
 
 `browser.js` validates absolute HTTP(S) URLs (no credentials, control characters,
-spaces or backslashes) and exposes `browserOpener({exec, platform})`. The host
+spaces or backslashes) and exposes `browserOpener({exec, platform, script})`. The host
 adapter `localBrowser()` in `browser-host.js` injects Herdr's local `exec` and
-window platform. macOS uses `open`, Linux uses `xdg-open`, with one URL argument,
-no shell, a 5s timeout and checked exit status. Windows is unsupported, matching
-the receiver's scope. No source requests or extraction happen in this helper.
+window platform and helper path. macOS uses `open`, Linux uses `xdg-open`, with
+one URL argument. Windows passes the URL as one Python argument to
+`browser-open.py`, which validates again and calls `os.startfile(url, "open")`
+(native ShellExecute). No `cmd`, `start`, PowerShell or shell interpolation is
+used. All platforms use a 5s helper timeout and checked exit status. No source requests or extraction happen in this helper.
 Successful handoff only means the operating system accepted the request; browser
 playback, track titles and browser tab lifetime are outside this mod's control.
 
@@ -97,7 +99,7 @@ about those sources is made here.
 ## Checks
 
 `node mods/cyberneon-radio/browser.check.mjs` verifies scheme/authority validation,
-argument-array handoff on both platforms, unsupported platforms, nonzero exit
+argument-array handoff on all three platforms, unsupported platforms, nonzero exit
 status and thrown/timeout failures using an injected opener. No real browser,
 network media, user's station config or running app is changed by this check.
 

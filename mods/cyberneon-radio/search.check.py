@@ -30,3 +30,23 @@ for payload in [b"{}", b"invalid", b" " * (directory.MAX_BYTES + 1)]:
     except ValueError:
         pass
 print("search.check.py ok (DNS, UA, query, fallback, response bounds; no network)")
+
+
+# Actual CLI output under a Windows-style redirected code page. No network:
+# patch transport before runpy imports the real CLI's default dependencies.
+import os
+import subprocess
+import sys
+runner = r'''import io, json, runpy, socket, sys, urllib.request
+socket.getaddrinfo = lambda *a, **k: [(0, 0, 0, "", ("1.2.3.4", 443))]
+socket.gethostbyaddr = lambda *a: ("fixture.api.radio-browser.info", [], [])
+urllib.request.urlopen = lambda *a, **k: io.BytesIO(json.dumps([{"name": "音樂"}], ensure_ascii=False).encode("utf-8"))
+sys.argv = [sys.argv[1], "ambient"]
+runpy.run_path(sys.argv[0], run_name="__main__")
+'''
+result = subprocess.run([sys.executable, '-c', runner, str(Path(__file__).with_name('radio-browser.py'))],
+                        capture_output=True, encoding='utf-8', timeout=5,
+                        env={**os.environ, 'PYTHONIOENCODING': 'cp1252'})
+assert result.returncode == 0, result.stderr
+assert json.loads(result.stdout) == [{'name': '音樂'}]
+print('search CLI preserves UTF-8 JSON under redirected code-page output (offline)')
