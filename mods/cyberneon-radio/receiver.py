@@ -144,6 +144,8 @@ def request(root, payload):
 
 
 def exchange(root, payload):
+    if not root.exists():
+        raise ReceiverGone("Receiver disconnected")
     prepare(root)
     touch(root)
     if len(payload.encode("utf-8")) > 1024 * 1024:

@@ -93,22 +93,40 @@ def prepare(root):
                    str(root), 1, 5, C.byref(owner), None, None, None, C.byref(descriptor))
     if code:
         raise C.WinError(code)
-    text = W.LPWSTR()
     owner_text = W.LPWSTR()
+    ace_text = W.LPWSTR()
     try:
-        checked(api(advapi, 'ConvertSidToStringSidW', W.BOOL, C.c_void_p, C.POINTER(W.LPWSTR))(owner, C.byref(owner_text)))
+        sid_text = api(advapi, 'ConvertSidToStringSidW', W.BOOL, C.c_void_p, C.POINTER(W.LPWSTR))
+        checked(sid_text(owner, C.byref(owner_text)))
         if owner_text.value != sid:
             raise ValueError("Receiver directory must be owned by this user")
-        checked(api(advapi, 'ConvertSecurityDescriptorToStringSecurityDescriptorW', W.BOOL,
-                    C.c_void_p, W.DWORD, W.DWORD, C.POINTER(W.LPWSTR), C.c_void_p)(descriptor, 1, 4, C.byref(text), None))
-        if text.value != sddl:
-            raise ValueError('Receiver directory must be private and owned by this user')
+        control, revision = W.WORD(), W.DWORD()
+        checked(api(advapi, 'GetSecurityDescriptorControl', W.BOOL, C.c_void_p,
+                    C.POINTER(W.WORD), C.POINTER(W.DWORD))(descriptor, C.byref(control), C.byref(revision)))
+        present, defaulted, acl = W.BOOL(), W.BOOL(), C.c_void_p()
+        checked(api(advapi, 'GetSecurityDescriptorDacl', W.BOOL, C.c_void_p,
+                    C.POINTER(W.BOOL), C.POINTER(C.c_void_p), C.POINTER(W.BOOL))(
+                        descriptor, C.byref(present), C.byref(acl), C.byref(defaulted)))
+        # Inspect the ACE, not SDDL serialization (Windows may add harmless
+        # auto-inheritance control flags or abbreviate well-known SIDs).
+        count = C.c_ushort.from_address(acl.value + 4).value if acl.value else 0
+        if not control.value & 0x1000 or not present.value or count != 1:
+            raise ValueError('Receiver directory must have a protected private DACL')
+        ace = C.c_void_p()
+        checked(api(advapi, 'GetAce', W.BOOL, C.c_void_p, W.DWORD, C.POINTER(C.c_void_p))(acl, 0, C.byref(ace)))
+        kind = C.c_ubyte.from_address(ace.value).value
+        flags = C.c_ubyte.from_address(ace.value + 1).value
+        mask = W.DWORD.from_address(ace.value + 4).value
+        checked(sid_text(ace.value + 8, C.byref(ace_text)))
+        if kind != 0 or flags != 3 or mask != 0x1f01ff or ace_text.value != sid:
+            raise ValueError('Receiver directory must grant full access only to this user')
     finally:
+        if ace_text:
+            LocalFree(ace_text)
         if owner_text:
             LocalFree(owner_text)
-        if text:
-            LocalFree(text)
         LocalFree(descriptor)
+
 
 
 class Pipe:
