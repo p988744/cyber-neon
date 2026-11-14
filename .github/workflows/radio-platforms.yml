@@ -34,7 +34,8 @@ jobs:
           $mpvDir >> $env:GITHUB_PATH
           # Test fixture only: exercise the user's python3 executable contract.
           $python = (Get-Command python).Source
-          Copy-Item $python (Join-Path (Split-Path $python) 'python3.exe') -Force
+          $python3 = Join-Path (Split-Path $python) 'python3.exe'
+          if (-not (Test-Path $python3)) { Copy-Item $python $python3 }
       - name: Install test mpv (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mpv
@@ -47,6 +48,7 @@ jobs:
           python3 -B mods/cyberneon-radio/windows-storage.check.py
           python3 -B mods/cyberneon-radio/storage.check.py
           python3 -B mods/cyberneon-radio/browser-open.check.py
+          python3 -B mods/cyberneon-radio/windows-transport.check.py
           python3 -B mods/cyberneon-radio/receiver.check.py
           for test in ipc stations search browser browser-tuner ducking ducking-lifecycle tuner; do
             node "mods/cyberneon-radio/$test.check.mjs"

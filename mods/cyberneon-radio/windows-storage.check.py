@@ -1,5 +1,6 @@
 """Actual CLI regression: read/resolve must not import POSIX fcntl."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -20,7 +21,11 @@ with tempfile.TemporaryDirectory(prefix='radio-platform-') as folder:
     root = Path(folder)
     media = root / '音樂 space.wav'
     media.write_bytes(b'fixture')
-    for action, values, expected in [('read', [], '[]'), ('resolve', [str(media)], str(media.resolve()))]:
+    cases = [('read', [], '[]'), ('resolve', [str(media)], str(media.resolve()))]
+    if os.name == 'nt':
+        cases += [('resolve', [media.as_uri()], str(media.resolve())),
+                  ('resolve', [str(media).replace('\\', '/')], str(media.resolve()))]
+    for action, values, expected in cases:
         result = subprocess.run([sys.executable, '-c', runner, str(helper), action, folder, *values],
                                 capture_output=True, text=True, encoding='utf-8', timeout=5)
         assert result.returncode == 0, result.stderr

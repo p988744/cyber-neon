@@ -55,8 +55,12 @@ with an optional browser handoff for services that stay in their own player.
    brew install mpv
    ```
 
-   Local `mpv` and `python3` must be on Herdr's PATH. Linux is also supported;
-   Windows playback and browser handoff are not implemented. Missing mpv shows
+   macOS, Linux and Windows are supported. Local `mpv` and `python3` must be on
+   Herdr's PATH (`mpv.exe` and a working `python3.exe` on Windows). On Windows,
+   install mpv from its [installation page](https://mpv.io/installation/) and
+   verify `python3 --version` and `mpv --version` in the environment used to launch
+   Herdr, then restart Herdr after PATH changes. A Windows browser-only station
+   uses the default browser through the native URL opener. Missing mpv shows
    `NO RECEIVER // install mpv`; install it and press PLAY again.
 2. Create `radio.json` in Herdr's config folder: normally
    `~/.config/herdr-app/radio.json`, or `${HERDR_APP_HOME}/radio.json` if overridden.
@@ -75,6 +79,10 @@ with an optional browser handoff for services that stay in their own player.
    direct stream, local audio file, folder, or local M3U/M3U8/PLS playlist. Folders
    play audio recursively in name order; local playlists preserve their order.
    Relative paths start at the config folder (playlist entries at the playlist).
+   Windows paths may use `C:/Users/me/Music` or JSON-escaped backslashes
+   (`C:\\Users\\me\\Music`); local `file:///C:/Users/me/Music/song.wav` URLs
+   also work, including percent-encoded spaces and Unicode. UNC/network shares
+   and drive-relative paths such as `C:Music` are not accepted.
    For browser listening, use `open` with the service's HTTPS page instead of `url`.
    See [station/source details](mods/cyberneon-radio/NOTES.md#station-list-and-source-api-8).
 3. Click **RADIO OFF** at the right end of the work area's bottom status bar.
@@ -130,7 +138,7 @@ that distinction; no source-owner messages were sent for this work.
 - `gh` with your own login, **read-only**, only for folders whose remote is on github.com. It calls `pr view`, `pr list`, `issue list`, `issue view` and `api …/milestones`, plus one GraphQL count of open issues and milestones per repo, at most every 2 to 10 minutes. The panel itself never writes to GitHub.
 - `hc read <terminal>` once when you open an agent's scan card, to read its status line (context and usage). `hc run` / `hc send` and Herdr's `space.new`, `tab.new` and `terminal.keep` when you click LAUNCH or DISPATCH.
 - `cyberneon-radio` uses local `python3` for config, source resolution and explicit
-  Radio Browser searches, and starts local `mpv` only on Play (macOS/Linux).
+  Radio Browser searches, and starts local `mpv` only on Play (macOS/Linux/Windows).
   In the tuner, **FIND A STATION** searches by tag and shows country, codec/bitrate
   and directory check status. **ADD** saves to your config folder's `radio.json`
   without tuning. Search uses DNS-discovered directory servers and a generic

@@ -59,11 +59,11 @@ in this mod folder. No shared-state RPC or arbitrary mpv command API is exposed.
 
 ## Local process and dependencies
 
-- Requires local `mpv` and `python3` on Herdr's PATH, macOS or Linux. `mpv
+- Requires local `mpv` and `python3` on Herdr's PATH, macOS, Linux or Windows. `mpv
   --version` is checked on first play. If absent, the readout is exactly
   `NO RECEIVER // install mpv`; no bridge/guardian/session is started.
-- Herdr provides `exec`, but no Unix socket API. Python's stdlib bridge sends
-  newline-delimited JSON to a private Unix socket. No `socat`, npm packages,
+- Herdr provides `exec`. Python's stdlib bridge sends newline-delimited JSON
+  to a private Unix socket on POSIX or an overlapped named pipe on Windows. No `socat`, npm packages,
   shell interpolation, remote machine selection, TCP listener, or downloaded code.
 - First play starts one guardian owning `mpv --no-video --idle
   --input-ipc-server=<socket>`. It adds `--no-config --load-scripts=no --ytdl=no
@@ -74,7 +74,12 @@ in this mod folder. No shared-state RPC or arbitrary mpv command API is exposed.
   decides which sources are allowed; restricted services remain browser-only.
   Playback requests contact only the caller-selected source.
 - The owner has a random 128-bit session token and a mode-0700 `/tmp/cnr-<token>`
-  directory per generation (short enough for macOS socket paths). A replacement
+  directory per generation on POSIX (short enough for macOS socket paths).
+  Windows uses `%TEMP%/cnr-<token>` with a protected current-user-only DACL,
+  inherited by session files, and `\\.\pipe\cnr-<token>`. Existing directories
+  with a different DACL or reparse points are rejected. Pipe connections verify
+  the server PID against the guardian-owned child; mpv restricts its pipe to
+  the current user/integrity level and rejects remote clients. A replacement
   first cancels the old token; its fresh token is published before startup, so
   close can cancel it even while the launcher is pending. Close writes a cancellation
   marker; the guardian terminates and reaps its own mpv child, force-killing if
@@ -88,8 +93,17 @@ in this mod folder. No shared-state RPC or arbitrary mpv command API is exposed.
   and playback never resumes automatically. A guardian forcibly killed by the OS cannot promise
   cleanup. Tiny temp cancellation markers remain for OS temp cleanup, preventing
   delayed launches from reviving a closed owner; socket/lease/PID are removed.
-- Windows named pipes are not implemented. No audible/network validation of
-  live radio streams is included; no sources are supplied in this foundation.
+- Windows uses a detached guardian and a no-console mpv child. Connect/read/write
+  have a shared 2s deadline using overlapped I/O; cancellation is reaped before
+  releasing buffers. Byte fragments (including split UTF-8) are reassembled.
+  Requests are capped at 32 commands / 1 MiB and replies at 8 MiB. All JSON helper
+  stdout/stderr explicitly uses UTF-8, including Python 3.12 redirected output.
+- Native Actions tests prove the Python/JS adapters with real Windows mpv, not
+  live Windows Herdr. Herdr exec Job Object inheritance and live app quit/layout
+  teardown are untested: DETACHED_PROCESS changes console association, not Job
+  Object membership. No forced breakaway from host jobs is attempted. The same
+  explicit close marker and lease govern tested cleanup; host job termination
+  may impose additional behavior. No audible/live-network test is included.
 
 ## Checks
 
@@ -201,8 +215,10 @@ No provider, endpoint or music is preconfigured in the shipped list or example.
 Bounds: radio.json and each local playlist at most 1 MiB UTF-8; at most 1000
 stations/tracks, 5000 visited source entries, 5000 children per folder, nesting 16.
 Errors are surfaced instead of silent truncation. Local helper timeout is 5s.
-Windows source handling is not implemented (matching the engine's macOS/Linux
-scope). Invalid protocols and control characters cannot reach engine commands.
+Windows drive paths and local drive file URLs are supported; UNC/device paths
+and drive-relative paths are rejected. Use forward slashes or escape backslashes
+in JSON. Windows junction children are skipped along with symlinks. Invalid
+protocols and control characters cannot reach engine commands.
 
 ### Ordered engine queues
 
@@ -278,3 +294,37 @@ control error; unconfirmed targets remain pending in the gain controller with
 capped retry backoff. Source preparation and browser validity gates are unchanged.
 Run `ducking.check.mjs`, `ducking-lifecycle.check.mjs` and
 `ducking.integration.mjs` in addition to the tuner/View/native checks.
+
+
+## Windows regression checks (#21)
+
+`.github/workflows/radio-platforms.yml` runs Python 3.12.10 on Windows Server 2022
+and Linux with real mpv, generated silence and scratch station/session files only.
+The Windows mpv test dependency is pinned to a release asset and SHA-256. The
+runner-only python3 executable fixture does not change user installations.
+`windows-storage.check.py` executes the actual read/resolve CLI with an import
+blocker for fcntl (red on the old code), plus native Windows drive/file URLs.
+`windows-transport.check.py` tests real Win32 partial UTF-8 replies, bounded stalled
+reads/writes, server PID rejection and private-directory ACL validation.
+`search.check.mjs` covers concurrent Add, duplicates, manual edits, overflow and
+cleanup; `tuner.integration.mjs` exercises the actual station adapter through
+Python with a Unicode config root/media, warning gates, Search/Add and ducking.
+`recovery.integration.mjs` checks UTF-8 mpv titles, queue advance, receiver reuse,
+lease expiry and explicit recovery. `queue.integration.mjs` uses test hard links
+for 500/1000 tracks on both platforms. Browser dispatch tests intercept
+`os.startfile(url, "open")` so no real browser launches.
+
+Primary implementation references:
+[mpv JSON IPC](https://mpv.io/manual/stable/#json-ipc),
+[mpv Windows pipe access control](https://github.com/mpv-player/mpv/blob/master/input/ipc-win.c),
+[Python msvcrt byte locking](https://docs.python.org/3.12/library/msvcrt.html),
+[Python os.startfile](https://docs.python.org/3.12/library/os.html#os.startfile),
+[Microsoft named-pipe clients](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-client),
+[overlapped completion](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getoverlappedresult).
+
+Storage uses a stable sidecar lock, Windows nonblocking retries bounded to 3s
+(inside the 5s helper budget), fsync + atomic replacement, and a final comparison
+against current config bytes. The lock file intentionally remains so parallel
+processes always lock the same object. Arbitrary editors do not participate in
+that lock; edits observed before replacement reject Add safely. As before, an
+external write racing after the final comparison cannot be made transactional.
