@@ -106,4 +106,15 @@ export class StationStore {
     }
     return snapshot;
   }
+  async remove(value) {
+    const station = stationMetadata(value);
+    if (!this.adapter.remove) throw new Error("Station storage is read-only");
+    const source = station.open || station.url;
+    // Removes by source under the adapter's lock; other entries stay untouched.
+    await this.adapter.remove(source);
+    const snapshot = await this.refresh({ fresh: true });
+    if (snapshot.error) throw new Error(`Cannot confirm removed station: ${snapshot.error}`);
+    if (snapshot.stations.some(s => (s.open || s.url) === source)) throw new Error("Station still listed after remove; retry");
+    return snapshot;
+  }
 }

@@ -105,6 +105,10 @@ export class Tuner {
       if (this.on()) await this.play(station, beforePlay);
     });
   }
+  remove(station) {
+    // Playback is untouched: a removed station keeps playing as ON AIR until stopped.
+    return this.enqueue(() => this.store.remove(station));
+  }
   mute() {
     return this.enqueue(async () => {
       this.silenced = !this.silenced;
