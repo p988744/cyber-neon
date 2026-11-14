@@ -11,7 +11,7 @@ print('mpv:', shutil.which('mpv'), flush=True)
 subprocess.run(['mpv', '--version'], check=True, timeout=10)
 for name in ['windows-storage', 'storage', 'search', 'browser-open', 'windows-transport', 'receiver']:
     subprocess.run([sys.executable, '-B', str(root / (name + '.check.py'))], check=True, timeout=60)
-for name in ['ipc', 'stations', 'search', 'browser', 'browser-tuner', 'ducking', 'ducking-lifecycle', 'tuner']:
+for name in ['ipc', 'stations', 'search', 'add', 'browser', 'browser-tuner', 'ducking', 'ducking-lifecycle', 'tuner']:
     subprocess.run(['node', str(root / (name + '.check.mjs'))], check=True, timeout=60)
 for name in ['tuner', 'recovery', 'queue', 'ducking']:
     subprocess.run(['node', str(root / (name + '.integration.mjs'))], check=True, timeout=180)

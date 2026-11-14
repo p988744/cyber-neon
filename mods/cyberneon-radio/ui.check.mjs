@@ -275,7 +275,7 @@ for (const on of [false, true]) {
     return [{ name: "Directory fixture", url_resolved: "https://example.invalid/new", country: "Taiwan", codec: "MP3", bitrate: 128, lastcheckok: 1 }];
   } });
   const tasks = [];
-  const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); } };
+  const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); }, timer: { after() { return { cancel() {} }; } } };
   const click = id => find(radio.render(), id).calls.find(([name]) => name === "on_click")[1]({}, cx);
   assert.equal(searches, 0, "opening/rendering tuner never searches");
   click("radio-directory-toggle");

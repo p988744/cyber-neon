@@ -31,8 +31,12 @@ apply. No stations or media ship with this mod.
 existing `localStations()` owner as `store`. `snapshot()` is detached and contains
 `{tag,loading,results,error,saving,message}`. Search starts immediately and clears
 old results; completion from an older search cannot replace newer results.
-`close()` invalidates pending search completions. The View owns notifications,
-not a timer. It must ignore late async notifications after disposal.
+`close()` invalidates pending search/Add completions. The View starts I/O inside
+`cx.spawn` and owns notifications. Add uses one-shot owner timers (6s per save or
+confirmation read, alongside the helper's 5s exec timeout), with no redraw polling.
+Completion or close cancels the timers; late completions cannot notify a closed
+owner. A timeout displays an error and enables retry; a helper that completes
+after timeout may still have saved, so retry rechecks disk through idempotent Add.
 
 Results normalize to the existing station schema, preferring `url_resolved` over
 `url`. Only HTTP(S) directory sources are accepted; local paths and other schemes
@@ -41,10 +45,15 @@ and `radioBrowserId`. A missing country or codec is labeled unknown. Broken
 records from a failed last check remain truthfully labeled if returned despite
 the requested filter. Content rating is not inferred from tags or titles.
 
-`await search.add(station)` calls **only** `store.save(station)`. It never selects,
+`await search.add(station, wait?)` calls **only** `store.save(station, wait?)`. It never selects,
 prepares or plays a result. `StationStore.save(station)` validates the station,
-awaits adapter persistence, waits for any active refresh, then reads and publishes
-the latest config. Errors reject for callers to display; the search controller
+awaits adapter persistence, then starts a fresh confirmation read. It supersedes
+any older refresh without waiting for its helper. Existing coalesced refresh
+callers follow the fresh read, and revision guards prevent late old reads/errors
+from replacing it. Ordinary refresh calls still coalesce. Add confirms membership
+in the refreshed list; a read error or missing station rejects instead of claiming
+success. The optional `wait(promise)` bounds each adapter operation using the
+current task's owner timer. Errors reject for callers to display; the search controller
 turns these into its error readout. No second station store is created.
 
 `localStations()` adds `adapter.save(station)` through `station-files.py save`.
@@ -73,6 +82,7 @@ file is created only by Add. Search, refresh and playback never create it.
 
 ```sh
 node mods/cyberneon-radio/search.check.mjs
+node mods/cyberneon-radio/add.check.mjs
 python3 -B mods/cyberneon-radio/search.check.py
 python3 -B mods/cyberneon-radio/storage.check.py
 node mods/cyberneon-radio/stations.check.mjs
@@ -96,3 +106,21 @@ generated silence in a scratch config: Add preserves a newer manual edit and
 does not replace the playing queue or allocate a receiver. Eager native checks
 do not verify pixels or pointer interaction; live screenshots/audible streams
 are not tested.
+
+`add.check.mjs` invokes actual DirectoryPanel controls, RadioSearch, StationStore,
+localStations and Python against scratch config. It asserts rendered SAVED after
+persistence, retaining manual edits and selection/playback, superseded refresh
+callers resuming, late-read protection, visible errors/deadlines/retry, pending Add
+coalescing and close cancellation. It includes real POSIX lock contention with
+the production exec timeout. Native builders, exec and timers have Node shims;
+never-settling reads/save promises and startup errors are deliberately injected.
+The pre-fix regression persists successfully but stays SAVING when an earlier
+refresh never settles. This demonstrates the unbounded dependency, not why the
+reporting macOS host's promise stalled. An isolated native check with deferred
+sleep/exec did not run its completion sentinel; `herdr-app check` cannot establish
+native async correctness. The reporting installation still needs a live retest.
+The platform suite runs the Add regression on native Windows and Linux CI,
+including Unicode scratch paths, success, stale refreshes, deadlines, errors and
+retries. Only the real POSIX `flock` probe is skipped on Windows; portable
+timeout/error coverage still runs there. The merged Windows storage/transport
+checks run in the same suite.
