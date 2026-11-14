@@ -50,6 +50,8 @@ def search(tag, discover=servers, request=urlopen):
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     try:
         if len(sys.argv) != 2:
             raise ValueError("Expected a search tag")

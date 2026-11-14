@@ -33,7 +33,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'mpv extraction failed' }
           $mpv = Get-ChildItem $mpvDir -Recurse -Filter mpv.exe | Select-Object -First 1
           if (-not $mpv) { throw 'mpv.exe missing from verified archive' }
-          $mpv.DirectoryName >> $env:GITHUB_PATH
+          "RADIO_TEST_MPV_DIR=$($mpv.DirectoryName)" >> $env:GITHUB_ENV
           # Test fixture only: exercise the user's python3 executable contract.
           $python = (Get-Command python).Source
           $python3 = Join-Path (Split-Path $python) 'python3.exe'
@@ -42,19 +42,10 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mpv
       - name: Run portable Radio checks
-        shell: bash
+        shell: python {0}
         run: |
-          set -euo pipefail
-          python3 --version
-          mpv --version
-          python3 -B mods/cyberneon-radio/windows-storage.check.py
-          python3 -B mods/cyberneon-radio/storage.check.py
-          python3 -B mods/cyberneon-radio/browser-open.check.py
-          python3 -B mods/cyberneon-radio/windows-transport.check.py
-          python3 -B mods/cyberneon-radio/receiver.check.py
-          for test in ipc stations search browser browser-tuner ducking ducking-lifecycle tuner; do
-            node "mods/cyberneon-radio/$test.check.mjs"
-          done
-          for test in tuner recovery queue ducking; do
-            node "mods/cyberneon-radio/$test.integration.mjs"
-          done
+          import os
+          import runpy
+          if os.environ.get("RADIO_TEST_MPV_DIR"):
+              os.environ["PATH"] = os.environ["RADIO_TEST_MPV_DIR"] + os.pathsep + os.environ["PATH"]
+          runpy.run_path("mods/cyberneon-radio/platform-suite.py", run_name="__main__")
