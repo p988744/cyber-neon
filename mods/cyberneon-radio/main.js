@@ -6,11 +6,16 @@ import { localReceiver } from "./bridge.js";
 import { localStations } from "./station-storage.js";
 import { localBrowser } from "./browser-host.js";
 import { Ducking } from "./ducking.js";
-import { Tuner, staticFrames } from "./tuner.js";
+import { Tuner, staticFrames, waveFrames, idleWave } from "./tuner.js";
 import { DirectoryPanel } from "./search-ui.js";
 
 const anim = () => shared("cyberneon.animations") !== false;
 const STATIC = staticFrames();
+const CHIP_WAVE = waveFrames(5), PANEL_WAVE = waveFrames(36);
+const store = {
+  get: key => { try { return localStorage.getItem(key); } catch { return null; } },
+  set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* per-viewer convenience only */ } },
+};
 
 // Exactly one layout-owned block; dismissing the popover never closes or
 // duplicates the receiver. All handlers and panel content belong to this View.
@@ -25,7 +30,9 @@ export default class Radio extends View {
     this.tuner.setVolumeControl(this.ducking);
     this.duckWake = 0;
     this.duckTimerGeneration = 0;
-    this.open = false;
+    // Pinned: outside clicks do not dismiss the tuner, and it reopens at startup.
+    this.pinned = store.get("pinned") === "on";
+    this.open = this.pinned;
     this.tuning = 0;
     this.tuneGeneration = 0;
     this.warningGeneration = 0;
@@ -78,6 +85,18 @@ export default class Radio extends View {
     // Keyboard browsing has the same visible selection/warning as pointer use.
     if (command !== "mute") this.open = true;
     this.act(command, cx);
+  }
+
+  setPinned(pinned, cx) {
+    this.pinned = pinned;
+    store.set("pinned", pinned ? "on" : "off");
+    cx.notify();
+  }
+
+  // The popover reports outside clicks as a close request; a pinned tuner ignores it.
+  requestOpen(open, cx) {
+    if (!open && this.pinned) return;
+    this.setOpen(open, cx);
   }
 
   setOpen(open, cx) {
@@ -170,6 +189,16 @@ export default class Radio extends View {
       .on_click((_e, cx) => { if (enabled) action(cx); }).child(label);
   }
 
+  // Equalizer made of block characters. Moves only while audio is actually
+  // playing and ANIM is on; otherwise a flat line.
+  wave(t, frames, width, period, size) {
+    const state = this.engine.snapshot();
+    const live = this.tuner.on() && state.status === "playing";
+    const bars = div().font_family("Share Tech Mono").text_size(size).text_color(live ? t.working : t.dim)
+      .whitespace_nowrap().child(live ? frames[0] : idleWave(width));
+    return live && anim() ? bars.frames(frames, period) : bars;
+  }
+
   panel() {
     const t = theme(), state = this.engine.snapshot(), list = this.store.snapshot();
     const station = this.tuner.station(), on = this.tuner.on(), busy = this.tuner.pending > 0;
@@ -187,7 +216,9 @@ export default class Radio extends View {
       .font_family("Share Tech Mono").text_size(11).text_color(t.muted)
       .child(h_flex().items_center().justify_between()
         .child(div().font_family("Chakra Petch").font_weight(700).text_color(t.accent).child("RADIO // SIGNAL DECK"))
-        .child(this.button("radio-close", "×", cx => this.setOpen(false, cx))))
+        .child(h_flex().gap(4)
+          .child(this.button("radio-pin", this.pinned ? "PINNED" : "PIN", cx => this.setPinned(!this.pinned, cx)))
+          .child(this.button("radio-close", "×", cx => { this.setPinned(false, cx); this.setOpen(false, cx); }))))
       .child(div().text_size(18).text_color(t.foreground).truncate().child(station?.name || (list.loading ? "LOADING STATIONS" : "NO STATIONS")))
       .when(Boolean(playing) && (!station || this.tuner.key(playing) !== this.tuner.key(station)), el => el.child(div().text_color(t.working).child(`ON AIR // ${playing.name}`)))
       .when(Boolean(station?.genre), el => el.child(div().child(station.genre)))
@@ -197,6 +228,7 @@ export default class Radio extends View {
         .child(`Explicit content${this.warning ? ` // ${warning.name}` : ""}${warning.contentWarning && warning.contentWarning !== "Explicit content" ? ` // ${warning.contentWarning}` : ""}`)))
       .when(Boolean(station?.note), el => el.child(div().child(station.note)))
       .child(line)
+      .child(this.wave(t, PANEL_WAVE, 36, 90, 13))
       .when(Boolean(station?.open), el => el.child(div().text_color(t.dim).child("BROWSER ONLY // opens outside Herdr")))
       .when(Boolean(browser), el => el.child(div().id("radio-browser-opened").text_color(t.muted)
         .child(`OPENED IN BROWSER // ${browser.name}. Playback is managed in your browser.`)))
@@ -252,12 +284,13 @@ export default class Radio extends View {
       .font_family("Share Tech Mono").text_size(11).cursor_pointer().hover(el => el.bg(t.hover))
       .tooltip(`${this.tuner.error || (!browser && state.error) ? `${this.tuner.error || state.error} // ` : ""}Radio // ${name}${browser ? ` // Opened in browser: ${browser.name}` : ""}${explicit ? " // Explicit content" : ""}`)
       .child(div().flex_none().child("RADIO"))
+      .child(this.wave(t, CHIP_WAVE, 5, 110, 10).id("radio-chip-wave").flex_none())
       .child(div().flex_1().min_w(0).truncate().child(name))
       .when(Boolean(explicit), el => el.child(div().id("radio-explicit").flex_none().text_size(9).text_color(t.done)
         .tooltip("Explicit content").child("EXPLICIT")));
     return h_flex().size_full().px(8).items_center().bg(t.chrome).border_t(1).border_color(t.border)
       .child(Popover.new("radio-tuner").anchor("bottom_right").open(this.open)
-        .on_open_change((open, cx) => this.setOpen(open, cx))
+        .on_open_change((open, cx) => this.requestOpen(open, cx))
         .trigger(chip).content(this.panel()));
   }
 }
