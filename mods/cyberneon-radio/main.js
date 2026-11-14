@@ -27,6 +27,7 @@ export default class Radio extends View {
     this.duckTimerGeneration = 0;
     this.open = false;
     this.tuning = 0;
+    this.fit = { line: 0, text: 0 }; // measured widths of the title box and its text
     this.tuneGeneration = 0;
     this.warningGeneration = 0;
     this.dismissalGeneration = 0;
@@ -86,6 +87,14 @@ export default class Radio extends View {
       this.dismissalGeneration++;
       this.finishWarning(false);
     }
+    cx.notify();
+  }
+
+  // Layout callback: remember a measured width; redraw only when it really changed.
+  measure(which, width, cx) {
+    this.fit ??= { line: 0, text: 0 };
+    if (Math.abs(this.fit[which] - width) < 0.5) return;
+    this.fit[which] = width;
     cx.notify();
   }
 
@@ -178,11 +187,16 @@ export default class Radio extends View {
     const warning = this.warning?.station ?? (station?.explicit ? station : playing?.explicit ? playing : browser?.explicit ? browser : null);
     const warningGeneration = this.warning?.generation;
     const title = on ? state.title || "WAITING FOR TRACK DATA" : "RECEIVER OFF";
-    const moving = anim() && on && title.length > 34;
+    // Scroll only when the text really is wider than its box, by exactly the overflow.
+    const fit = this.fit ?? { line: 0, text: 0 };
+    const overflow = fit.text - fit.line;
+    const moving = anim() && on && fit.line > 0 && overflow > 1;
     const error = this.tuner.error || (!browser && state.error) || list.error;
     const line = div().id("radio-now-playing").relative().h(22).overflow_hidden().text_color(t.working)
-      .tooltip(title).child(div().relative().flex_none().whitespace_nowrap().child(title)
-        .when(moving, el => el.loop("left", { from: 0, to: -Math.max(20, title.length * 7 - 242), period: Math.max(5000, title.length * 160), easing: "linear" })));
+      .on_size_change((size, cx) => this.measure("line", size.width, cx))
+      .tooltip(title).child(div().id("radio-now-playing-text").relative().flex_none().whitespace_nowrap().child(title)
+        .on_size_change((size, cx) => this.measure("text", size.width, cx))
+        .when(moving, el => el.loop("left", { from: 0, to: -overflow, period: Math.max(5000, overflow * 40), easing: "linear" })));
     return v_flex().w(320).p(12).gap(9).bg(t.popover).border_1().border_color(t.accent)
       .font_family("Share Tech Mono").text_size(11).text_color(t.muted)
       .child(h_flex().items_center().justify_between()
