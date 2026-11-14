@@ -1,3 +1,4 @@
+import { sessionRoot } from "./test-platform.mjs";
 // Native receiver adapter + real mpv. Generated silence, scratch sessions only.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -47,7 +48,7 @@ try {
   await observe("working"); await observe("blocked"); await duck.setEnabled(false);
   assert.equal(await get("volume"), 30);
   await duck.setEnabled(true); await observe("working"); await observe("blocked");
-  const root = `/tmp/cnr-${tokens.at(-1)}`;
+  const root = sessionRoot(tokens.at(-1));
   const pid = await readFile(join(root, "pid"), "utf8");
   await utimes(join(root, "lease"), new Date(0), new Date(0));
   for (let i = 0; i < 160; i++) {
@@ -59,7 +60,7 @@ try {
   assert.equal(engine.started, false); assert.equal(duck.until, 0); assert.equal(tokens.length, 1);
   await tuner.power(); assert.equal(engine.snapshot().error, null);
   assert.equal(tokens.length, 2);
-  assert.notEqual(await readFile(`/tmp/cnr-${tokens.at(-1)}/pid`, "utf8"), pid);
+  assert.notEqual(await readFile(join(sessionRoot(tokens.at(-1)), "pid"), "utf8"), pid);
   assert.equal(await get("volume"), 30); assert.equal(await get("mute"), true);
   await observe("working"); await observe("blocked");
   duck.close(); tuner.close(); await engine.close();
@@ -71,10 +72,10 @@ try {
   for (const token of tokens) {
     await exec("python3", [script, "close", token]);
     for (let i = 0; i < 160; i++) {
-      try { await access(`/tmp/cnr-${token}/done`); break; } catch {}
+      try { await access(join(sessionRoot(token), "done")); break; } catch {}
       await new Promise(resolve => setTimeout(resolve, 25));
     }
-    await rm(`/tmp/cnr-${token}`, { recursive: true, force: true });
+    await rm(sessionRoot(token), { recursive: true, force: true });
   }
   await rm(folder, { recursive: true, force: true });
 }

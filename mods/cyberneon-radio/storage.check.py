@@ -16,7 +16,8 @@ with TemporaryDirectory(prefix="radio-save-") as root:
     path.write_text("[]")
     os.chmod(path, 0o640)
     assert storage.save_station(root, dict(station))
-    assert path.stat().st_mode & 0o777 == 0o640
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o777 == 0o640
     external = '[{"name":"Manual edit","url":"~/Music"}]'
     sync = storage.os.fsync
     def changed(fd):

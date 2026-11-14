@@ -20,7 +20,7 @@ roots = []
 
 def session():
     token = uuid.uuid4().hex
-    root = Path("/tmp") / ("cnr-" + token)
+    root = Path(tempfile.gettempdir() if os.name == "nt" else "/tmp") / ("cnr-" + token)
     roots.append(root)
     return token, root
 
@@ -29,7 +29,7 @@ def call(action, token, payload=None, env=None, ok=True):
     args = [sys.executable, "-B", str(SCRIPT), action, token]
     if payload is not None:
         args.append(payload)
-    result = subprocess.run(args, capture_output=True, text=True, timeout=7, env=env)
+    result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", timeout=7, env=env)
     if ok:
         assert result.returncode == 0, result.stderr
     else:
@@ -43,6 +43,18 @@ def request(token, commands):
 
 
 def gone(pid):
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return True
+        kernel.CloseHandle(handle)
+        return False
     try:
         os.kill(pid, 0)
         return False
@@ -82,7 +94,7 @@ try:
     assert not (root / "ipc").exists()
 
     with tempfile.TemporaryDirectory(prefix="cn-radio-check-") as folder:
-        media = Path(folder) / 'silent "file".wav'
+        media = Path(folder) / 'silent 音樂 file.wav'
         with wave.open(str(media), "wb") as stream:
             stream.setnchannels(1)
             stream.setsampwidth(2)

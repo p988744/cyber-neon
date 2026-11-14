@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 import re
 import sys
-import fcntl
+from contextlib import contextmanager
+import time
 import tempfile
 from urllib.parse import unquote, urlsplit
 
@@ -16,6 +17,41 @@ AUDIO = {".mp3", ".flac", ".wav", ".ogg", ".opus", ".m4a", ".aac", ".aiff", ".ai
 PLAYLIST = {".m3u", ".m3u8", ".pls"}
 STREAMS = {"http", "https", "icy", "rtsp", "rtmp", "rtmps"}
 BROWSER_ONLY = {"youtube.com", "youtu.be", "youtube-nocookie.com", "spotify.com", "music.apple.com", "soundcloud.com", "snd.sc", "poolsuite.net", "somafm.com"}
+
+
+@contextmanager
+def station_lock(path):
+    # Lock a stable sidecar, never the atomically replaced config inode. Windows
+    # locking starts at the current byte offset, including beyond EOF.
+    with path.open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+            deadline = time.monotonic() + 3
+            while True:
+                lock.seek(0)
+                try:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as error:
+                    if error.errno not in (13, 11, 36) or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.025)
+            try:
+                yield
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def windows_drive(value):
+    return bool(re.match(r"^[a-zA-Z]:[\\/]", value))
 
 
 def read_text(path):
@@ -38,6 +74,8 @@ def config_bytes(path):
 
 
 def stream_url(value):
+    if windows_drive(value):
+        return False
     parts = urlsplit(value)
     if not parts.scheme:
         return False
@@ -53,12 +91,21 @@ def stream_url(value):
 
 def local_path(value, base):
     parts = urlsplit(value)
-    if parts.scheme.lower() == "file":
+    if windows_drive(value):
+        if os.name != "nt":
+            raise ValueError("Windows drive paths require Windows")
+    elif parts.scheme.lower() == "file":
         if parts.netloc not in ("", "localhost") or parts.query or parts.fragment:
             raise ValueError("Expected a local file URL")
         value = unquote(parts.path)
+        if os.name == "nt" and re.match(r"^/[a-zA-Z]:/", value):
+            value = value[1:]
+        if os.name == "nt" and (value.startswith(("//", "\\\\")) or not windows_drive(value)):
+            raise ValueError("Expected a local drive file URL")
     elif parts.scheme:
         raise ValueError("Unsupported radio source protocol")
+    if os.name == "nt" and (value.startswith(("//", "\\\\")) or re.match(r"^[a-zA-Z]:(?![\\/])", value)):
+        raise ValueError("Expected a local absolute drive or relative path")
     if value.startswith("~") and value != "~" and not value.startswith("~/"):
         raise ValueError("Use ~/ for home-relative paths")
     path = Path(os.path.expanduser(value))
@@ -97,7 +144,7 @@ def resolve_source(value, root):
                                 raise ValueError("Radio folder expansion limit exceeded")
                             children.append(child)
                     for child in sorted(children, key=lambda entry: entry.name):
-                        if child.is_symlink():
+                        if child.is_symlink() or (os.name == "nt" and os.path.isjunction(child.path)):
                             continue
                         if child.is_dir() or Path(child.name).suffix.lower() in AUDIO:
                             expand(child.path, path, depth + 1)
@@ -160,42 +207,38 @@ def save_station(root, station):
     # An editor's symlink must not be replaced with a different regular file.
     if path.is_symlink():
         raise ValueError("Cannot save a symlinked radio.json; edit its target manually")
-    with (Path(root) / "radio.json.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with station_lock(Path(root) / "radio.json.lock"):
+        original = config_bytes(path)
+        values = json.loads(original.decode("utf-8-sig"), parse_constant=invalid_constant) if original is not None else []
+        validate_stations(values)
+        source = station.get("open") or station.get("url")
+        if any((s.get("open") or s.get("url")).strip() == source.strip() or
+               (station.get("radioBrowserId") and s.get("radioBrowserId") == station["radioBrowserId"])
+               for s in values):
+            return False
+        station.pop("contentWarning", None)  # Derived at read time.
+        values.append(station)
+        validate_stations(values)
+        data = (json.dumps(values, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
+        if len(data) > MAX_BYTES:
+            raise ValueError("Radio file exceeds 1 MiB")
+        fd, temporary = tempfile.mkstemp(prefix=".radio-", dir=root)
         try:
-            original = config_bytes(path)
-            values = json.loads(original.decode("utf-8-sig"), parse_constant=invalid_constant) if original is not None else []
-            validate_stations(values)
-            source = station.get("open") or station.get("url")
-            if any((s.get("open") or s.get("url")).strip() == source.strip() or
-                   (station.get("radioBrowserId") and s.get("radioBrowserId") == station["radioBrowserId"])
-                   for s in values):
-                return False
-            station.pop("contentWarning", None)  # Derived at read time.
-            values.append(station)
-            validate_stations(values)
-            data = (json.dumps(values, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
-            if len(data) > MAX_BYTES:
-                raise ValueError("Radio file exceeds 1 MiB")
-            fd, temporary = tempfile.mkstemp(prefix=".radio-", dir=root)
-            try:
-                with os.fdopen(fd, "wb") as stream:
-                    stream.write(data)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                # App saves serialize; external edits detected before replacement fail safely.
-                latest = config_bytes(path)
-                if path.is_symlink() or latest != original:
-                    raise ValueError("radio.json changed while saving; retry Add")
-                if path.exists():
-                    os.chmod(temporary, path.stat().st_mode & 0o777)
-                os.replace(temporary, path)
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
-            return True
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            # App saves serialize; external edits detected before replacement fail safely.
+            latest = config_bytes(path)
+            if path.is_symlink() or latest != original:
+                raise ValueError("radio.json changed while saving; retry Add")
+            if path.exists() and os.name != "nt":
+                os.chmod(temporary, path.stat().st_mode & 0o777)
+            os.replace(temporary, path)
         finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        return True
 
 
 def main():
@@ -216,6 +259,8 @@ def main():
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     try:
         main()
     except (OSError, ValueError, configparser.Error) as error:
