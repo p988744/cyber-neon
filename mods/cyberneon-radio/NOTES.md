@@ -93,12 +93,13 @@ in this mod folder. No shared-state RPC or arbitrary mpv command API is exposed.
   and playback never resumes automatically. A guardian forcibly killed by the OS cannot promise
   cleanup. Tiny temp cancellation markers remain for OS temp cleanup, preventing
   delayed launches from reviving a closed owner; socket/lease/PID are removed.
-- Windows uses a detached guardian and a no-console mpv child. Connect/read/write
+- Windows uses a detached guardian and owns `mpv.exe` directly (the console
+  wrapper `mpv.com` would launch a different pipe-server PID). Connect/read/write
   have a shared 2s deadline using overlapped I/O; cancellation is reaped before
   releasing buffers. Byte fragments (including split UTF-8) are reassembled.
   Requests are capped at 32 commands / 1 MiB and replies at 8 MiB. All JSON helper
   stdout/stderr explicitly uses UTF-8, including Python 3.12 redirected output.
-- Native Actions tests prove the Python/JS adapters with real Windows mpv, not
+- Native Actions tests exercise the Python/JS adapters with real Windows mpv, not
   live Windows Herdr. Herdr exec Job Object inheritance and live app quit/layout
   teardown are untested: DETACHED_PROCESS changes console association, not Job
   Object membership. No forced breakaway from host jobs is attempted. The same
@@ -300,7 +301,8 @@ Run `ducking.check.mjs`, `ducking-lifecycle.check.mjs` and
 
 `.github/workflows/radio-platforms.yml` runs Python 3.12.10 on Windows Server 2022
 and Linux with real mpv, generated silence and scratch station/session files only.
-The Windows mpv test dependency is pinned to a release asset and SHA-256. The
+The Windows mpv test dependency is the first-party v0.41.0 release, pinned by
+asset URL and SHA-256 (not a rolling nightly). The
 runner-only python3 executable fixture does not change user installations.
 `windows-storage.check.py` executes the actual read/resolve CLI with an import
 blocker for fcntl (red on the old code), plus native Windows drive/file URLs.

@@ -26,8 +26,8 @@ jobs:
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP 'mpv.zip'
-          Invoke-WebRequest 'https://github.com/mpv-player/mpv/releases/download/git-release/mpv-v0.42.0-dev-g649001d4e-43517371464-x86_64-w64-mingw32-full.zip' -OutFile $archive
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '12b74f144eeef4bcc4a39efa15685697bdb315dbe03650471d51e65418fc2f16') { throw 'mpv checksum mismatch' }
+          Invoke-WebRequest 'https://github.com/mpv-player/mpv/releases/download/v0.41.0/mpv-v0.41.0-x86_64-w64-mingw32.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne 'a49811c0752c108b8260636f9c6f6fcb97406641c98b30f1e7b500dfb20177de') { throw 'mpv checksum mismatch' }
           $mpvDir = Join-Path $env:RUNNER_TEMP 'radio-mpv'
           Expand-Archive $archive $mpvDir
           $mpv = Get-ChildItem $mpvDir -Recurse -Filter mpv.exe | Select-Object -First 1
