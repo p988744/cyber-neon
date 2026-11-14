@@ -228,13 +228,23 @@ def save_station(root, station):
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-            # App saves serialize; external edits detected before replacement fail safely.
-            latest = config_bytes(path)
-            if path.is_symlink() or latest != original:
-                raise ValueError("radio.json changed while saving; retry Add")
-            if path.exists() and os.name != "nt":
-                os.chmod(temporary, path.stat().st_mode & 0o777)
-            os.replace(temporary, path)
+            # Windows readers/editors may briefly hold a handle without delete
+            # sharing. Retry replacement boundedly, rechecking external edits on
+            # every attempt; never move/delete the original to work around it.
+            deadline = time.monotonic() + 0.5
+            while True:
+                latest = config_bytes(path)
+                if path.is_symlink() or latest != original:
+                    raise ValueError("radio.json changed while saving; retry Add")
+                if path.exists() and os.name != "nt":
+                    os.chmod(temporary, path.stat().st_mode & 0o777)
+                try:
+                    os.replace(temporary, path)
+                    break
+                except PermissionError:
+                    if os.name != "nt" or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.01)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)

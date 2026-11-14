@@ -33,7 +33,12 @@ try {
   await writeFile(path, JSON.stringify([manual]));
   await search.add(station);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8"))[0], manual, "save reads current disk, preserves external additions and metadata");
-  await Promise.all(Array.from({ length: 8 }, (_, i) => makeStore().save({ name: `Concurrent ${i}`, url: `https://example.invalid/${i}` })));
+  const writes = Array.from({ length: 8 }, (_, i) => makeStore().save({ name: `Concurrent ${i}`, url: `https://example.invalid/${i}` }));
+  const concurrentReads = Array.from({ length: 16 }, async () => {
+    const text = await call("read");
+    assert.ok(Array.isArray(JSON.parse(text)), "parallel reader sees a complete atomic file");
+  });
+  await Promise.all([...writes, ...concurrentReads]);
   assert.equal(JSON.parse(await readFile(path, "utf8")).length, 10, "parallel saves never lose entries");
   for (const invalid of ["[", '[{"name":"Incomplete"}]', "{}", '[{"name":"Invalid JSON","url":"~/Music","extra":NaN}]'] ) {
     await writeFile(path, invalid);

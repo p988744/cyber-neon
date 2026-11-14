@@ -25,12 +25,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $archive = Join-Path $env:RUNNER_TEMP 'mpv.7z'
-          Invoke-WebRequest 'https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261111/mpv-x86_64-20261111-git-bcde6b93cc.7z' -OutFile $archive
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne 'f259b5fd4b5c395617c948a4fadcdf55bba1c5282fb7c13e88626b3f71072baf') { throw 'mpv checksum mismatch' }
+          $archive = Join-Path $env:RUNNER_TEMP 'mpv.zip'
+          Invoke-WebRequest 'https://github.com/mpv-player/mpv/releases/download/git-release/mpv-v0.42.0-dev-g649001d4e-43517371464-x86_64-w64-mingw32-full.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '12b74f144eeef4bcc4a39efa15685697bdb315dbe03650471d51e65418fc2f16') { throw 'mpv checksum mismatch' }
           $mpvDir = Join-Path $env:RUNNER_TEMP 'radio-mpv'
-          7z x $archive "-o$mpvDir" -y
-          if ($LASTEXITCODE -ne 0) { throw 'mpv extraction failed' }
+          Expand-Archive $archive $mpvDir
           $mpv = Get-ChildItem $mpvDir -Recurse -Filter mpv.exe | Select-Object -First 1
           if (-not $mpv) { throw 'mpv.exe missing from verified archive' }
           "RADIO_TEST_MPV_DIR=$($mpv.DirectoryName)" >> $env:GITHUB_ENV
