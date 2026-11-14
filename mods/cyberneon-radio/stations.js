@@ -39,6 +39,8 @@ export class StationStore {
     this.state = { stations: [], loading: false, error: null, path: adapter.path };
     this.listeners = new Set();
     this.pending = null;
+    this.revision = 0;
+    this.supersedeRefresh = null;
   }
   snapshot() { return copy(this.state); }
   subscribe(listener) {
@@ -50,23 +52,36 @@ export class StationStore {
       try { listener(this.snapshot()); } catch { /* One observer cannot block others. */ }
     }
   }
-  refresh() {
-    if (this.pending) return this.pending;
+  refresh({ fresh = false, wait = promise => promise } = {}) {
+    if (this.pending && !fresh) return this.pending;
+    const revision = ++this.revision;
+    const supersedePrevious = this.supersedeRefresh;
+    const superseded = new Promise(resolve => { this.supersedeRefresh = resolve; });
     // Defer the work so pending is installed before subscribers can refresh again.
-    this.pending = Promise.resolve().then(async () => {
+    const work = Promise.resolve().then(async () => {
+      if (revision !== this.revision) return this.snapshot();
       this.state.loading = true;
       this.publish();
       try {
-        const stations = parseStations(await this.adapter.read());
-        this.state = { ...this.state, stations, error: null };
-      } catch (error) { this.state.error = String(error.message ?? error); }
+        const stations = parseStations(await wait(this.adapter.read()));
+        if (revision === this.revision) this.state = { ...this.state, stations, error: null };
+      } catch (error) {
+        if (revision === this.revision) this.state.error = String(error.message ?? error);
+      }
       finally {
-        this.state.loading = false;
-        this.pending = null;
-        this.publish();
+        if (revision === this.revision) {
+          this.state.loading = false;
+          this.pending = null;
+          this.supersedeRefresh = null;
+          this.publish();
+        }
       }
       return this.snapshot();
     });
+    this.pending = Promise.race([work, superseded]);
+    // Coalesced callers (including the owner's refresh task) follow the fresh
+    // read too; they must not remain suspended on the superseded helper.
+    if (supersedePrevious) supersedePrevious(this.pending);
     return this.pending;
   }
   async prepare(value) {
@@ -75,12 +90,20 @@ export class StationStore {
     const source = await this.adapter.resolve(station.url);
     return { station, source };
   }
-  async save(value) {
+  async save(value, wait = promise => promise) {
     const station = stationMetadata(value);
     if (!this.adapter.save) throw new Error("Station storage is read-only");
     // The adapter appends against the current disk contents, never this snapshot.
-    await this.adapter.save(station);
-    if (this.pending) await this.pending;
-    return this.refresh();
+    await wait(this.adapter.save(station));
+    // Only a read started after persistence can confirm this Add. Never wait on
+    // an older refresh: it may be stalled or contain a pre-save snapshot.
+    const snapshot = await this.refresh({ fresh: true, wait });
+    if (snapshot.error) throw new Error(`Cannot confirm saved station: ${snapshot.error}`);
+    const source = station.open || station.url;
+    if (!snapshot.stations.some(s => (s.open || s.url) === source ||
+      (station.radioBrowserId && s.radioBrowserId === station.radioBrowserId))) {
+      throw new Error("Station missing after save; retry Add");
+    }
+    return snapshot;
   }
 }

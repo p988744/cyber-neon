@@ -5,30 +5,59 @@ import { localDirectory } from "./search-client.js";
 
 const MONO = "Share Tech Mono";
 
-// Created once in Radio.init with Radio's existing store. Owns no receiver/timer.
+// Created once in Radio.init with Radio's existing store. Owns no receiver.
 export class DirectoryPanel {
   constructor(store, directory = localDirectory()) {
     this.store = store;
     this.model = new RadioSearch(directory, store);
     this.expanded = false;
     this.closed = false;
+    this.waits = new Set();
     this.input = InputState.new({ placeholder: "Search by tag…" });
     this.input.on("submit", (_event, cx) => this.search(this.input.value(), cx));
   }
   search(tag, cx) {
     if (this.closed) return;
     this.input.set_value(tag);
-    const pending = this.model.search(tag);
-    cx.notify();
-    cx.spawn(async cx => { await pending; if (!this.closed) cx.notify(); });
+    cx.spawn(async cx => {
+      if (this.closed) return;
+      const pending = this.model.search(tag);
+      cx.notify();
+      await pending;
+      if (!this.closed) cx.notify();
+    });
   }
   add(station, cx) {
     if (this.closed) return;
-    const pending = this.model.add(station);
-    cx.notify();
-    cx.spawn(async cx => { await pending; if (!this.closed) cx.notify(); });
+    cx.spawn(async cx => {
+      if (this.closed) return;
+      const pending = this.model.add(station, promise => this.wait(promise, cx));
+      cx.notify();
+      await pending;
+      if (!this.closed) cx.notify();
+    });
   }
-  close() { this.closed = true; this.model.close(); this.input.release(); }
+  wait(promise, cx) {
+    // Host exec has its own 5s timeout. This one-shot owner deadline also covers
+    // a host promise that never settles. No polling or retained event context.
+    return new Promise((resolve, reject) => {
+      const finish = (error, value) => {
+        if (!this.waits.delete(cancel)) return;
+        timer.cancel();
+        if (error) reject(error); else resolve(value);
+      };
+      const cancel = () => finish(new Error("Radio panel closed"));
+      const timer = cx.timer.after(6000, () => finish(new Error("Saving radio station timed out; retry Add")));
+      this.waits.add(cancel);
+      Promise.resolve(promise).then(value => finish(null, value), error => finish(error));
+    });
+  }
+  close() {
+    this.closed = true;
+    this.model.close();
+    for (const cancel of this.waits) cancel();
+    this.input.release();
+  }
   button(id, label, t, action, enabled = true) {
     return div().id(id).px(6).h(24).flex().items_center().flex_shrink_0()
       .border(1).border_color(t.border).text_color(enabled ? t.working : t.dim)

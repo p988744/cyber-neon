@@ -26,6 +26,7 @@ export class RadioSearch {
     this.store = store;
     this.state = { tag: "", loading: false, results: [], error: null, saving: null, message: null };
     this.generation = 0;
+    this.closed = false;
   }
   snapshot() { return JSON.parse(JSON.stringify(this.state)); }
   async search(tag) {
@@ -45,17 +46,17 @@ export class RadioSearch {
     } finally { if (generation === this.generation) this.state.loading = false; }
     return this.snapshot();
   }
-  async add(station) {
-    if (this.state.saving) return this.snapshot();
+  async add(station, wait) {
+    if (this.closed || this.state.saving) return this.snapshot();
     this.state.saving = station.url;
     this.state.error = null;
     this.state.message = null;
     try {
-      await this.store.save(station);
-      this.state.message = `Saved ${station.name}`;
-    } catch (error) { this.state.error = String(error.message ?? error); }
-    finally { this.state.saving = null; }
+      await this.store.save(station, wait);
+      if (!this.closed) this.state.message = `Saved ${station.name}`;
+    } catch (error) { if (!this.closed) this.state.error = String(error.message ?? error); }
+    finally { if (!this.closed) this.state.saving = null; }
     return this.snapshot();
   }
-  close() { ++this.generation; }
+  close() { this.closed = true; ++this.generation; this.state.saving = null; }
 }
