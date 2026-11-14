@@ -3,7 +3,7 @@
 import configparser
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import sys
 from contextlib import contextmanager
@@ -100,15 +100,23 @@ def local_path(value, base):
         value = unquote(parts.path)
         if os.name == "nt" and re.match(r"^/[a-zA-Z]:/", value):
             value = value[1:]
-        if os.name == "nt" and (value.startswith(("//", "\\\\")) or not windows_drive(value)):
+        if os.name == "nt" and not windows_drive(value):
             raise ValueError("Expected a local drive file URL")
     elif parts.scheme:
         raise ValueError("Unsupported radio source protocol")
-    if os.name == "nt" and (value.startswith(("//", "\\\\")) or re.match(r"^[a-zA-Z]:(?![\\/])", value)):
-        raise ValueError("Expected a local absolute drive or relative path")
     if value.startswith("~") and value != "~" and not value.startswith("~/"):
         raise ValueError("Use ~/ for home-relative paths")
-    path = Path(os.path.expanduser(value))
+    value = os.path.expanduser(value)
+    if os.name == "nt":
+        # Windows treats either separator (including mixed leading pairs) as
+        # UNC/device syntax. Inspect lexical anchors before Path.resolve can
+        # touch a share/device. Only absolute letter drives or unanchored
+        # relative paths are local sources; drive-relative/root-relative paths
+        # depend on ambient Windows state and are rejected as well.
+        windows = PureWindowsPath(value.replace("\\", "/"))
+        if windows.anchor and not (re.fullmatch(r"[a-zA-Z]:", windows.drive) and windows.root):
+            raise ValueError("Expected a local absolute drive or relative path")
+    path = Path(value)
     return (base / path).resolve() if not path.is_absolute() else path.resolve()
 
 
