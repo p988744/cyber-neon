@@ -30,6 +30,9 @@ jobs:
           if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne 'a49811c0752c108b8260636f9c6f6fcb97406641c98b30f1e7b500dfb20177de') { throw 'mpv checksum mismatch' }
           $mpvDir = Join-Path $env:RUNNER_TEMP 'radio-mpv'
           Expand-Archive $archive $mpvDir
+          # This versioned first-party asset wraps its runtime ZIP. The outer
+          # archive digest pins both executable and every bundled runtime DLL.
+          Get-ChildItem $mpvDir -Filter *.zip | ForEach-Object { Expand-Archive $_.FullName (Join-Path $mpvDir "runtime") }
           $mpv = Get-ChildItem $mpvDir -Recurse -Filter mpv.exe | Select-Object -First 1
           if (-not $mpv) { throw 'mpv.exe missing from verified archive' }
           "RADIO_TEST_MPV_DIR=$($mpv.DirectoryName)" >> $env:GITHUB_ENV
