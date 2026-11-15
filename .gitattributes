@@ -1,0 +1,5 @@
+# Keep text files LF on every platform: some checks parse source with
+# LF-only regexes (e.g. mods/cyberneon-radio/ui.check.mjs).
+* text=auto eol=lf
+*.png binary
+*.ttf binary
