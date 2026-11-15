@@ -222,10 +222,9 @@ export default class Radio extends View {
           cx.notify();
         }))
         .child(div().text_size(10).text_color(t.dim).child("AGENT NEEDS YOU // 4s · 20%")))
-      .child(div().text_size(10).text_color(t.dim).child(busy ? "TUNING…" : `${on ? state.status.toUpperCase() : "OFF"} // ${list.stations.length} STATIONS`))
+      .child(div().text_size(10).text_color(t.dim).child(busy ? "TUNING…" : `${on ? state.status.toUpperCase() : "OFF"} // ${list.stations.length} STATIONS${list.loading ? " // REFRESHING" : ""}`))
       .when(Boolean(error), el => el.child(div().text_color(t.blocked).child(String(error))))
       .when(!station && !list.loading, el => el.child(div().child(`Add your stations to ${list.path || "the radio station file"}. No stations or music are bundled.`)))
-      .when(Boolean(list.loading) && Boolean(station), el => el.child(div().text_color(t.dim).child("REFRESHING STATIONS…")))
       .when(Boolean(station), el => el.child(v_flex().id("radio-stations").max_h(100).overflow_y_scrollbar().gap(2)
         .children(list.stations.map((s, i) => div().id(`radio-station-${i}`).px(6).py(4).cursor_pointer()
           .bg(this.tuner.key(s) === this.tuner.key(station) ? t.selected : t.popover)
