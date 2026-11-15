@@ -54,7 +54,7 @@ const state = { source: null, title: "", error: null, status: "idle" };
 const engine = { snapshot: () => ({ ...state }) };
 const store = { snapshot: () => ({ stations, loading: false, error: null, path: "/fixture/stations.json" }) };
 const view = new Radio();
-Object.assign(view, { engine, store, directory: new DirectoryPanel(store), tuner: new Tuner(engine, store), open: false, tuning: 0, volume: { value: () => 50 } });
+Object.assign(view, { engine, store, directory: new DirectoryPanel(store), tuner: new Tuner(engine, store), open: false, tuning: 0, fit: { line: 0, text: 0 }, volume: { value: () => 50 } });
 function all(root) {
   if (!root || typeof root !== "object") return [];
   return [root, ...root.items.flatMap(all), ...root.calls.filter(([name]) => ["content", "trigger"].includes(name)).flatMap(([, el]) => all(el))];
@@ -77,6 +77,24 @@ state.title = "A synthetic now playing line with enough text to scroll past the 
 view.tuner.playing = stations[0]; view.tuning = 1;
 assert.ok(texts().includes("Fixture One"));
 assert.equal(hasCall("frames"), true);
+const byId = id => nodes().find(n => n.calls.some(([k, v]) => k === "id" && v === id));
+// Marquee: only when the measured text is wider than its box (a long title alone is not enough).
+const loopOf = () => nodes().flatMap(n => n.calls).find(([k, edge]) => k === "loop" && edge === "left");
+view.fit = { line: 0, text: 0 };
+assert.equal(loopOf(), undefined, "unmeasured title does not scroll");
+view.fit = { line: 296, text: 200 };
+assert.equal(loopOf(), undefined, "title that fits does not scroll, however long its characters");
+view.fit = { line: 296, text: 296.5 };
+assert.equal(loopOf(), undefined, "sub-pixel overflow does not scroll");
+view.fit = { line: 296, text: 596 };
+assert.equal(loopOf()[2].to, -300, "scrolls exactly the overflow");
+// Layout callbacks record widths and redraw only on a real change.
+let redraws = 0; const mcx = { notify: () => redraws++ };
+view.fit = { line: 0, text: 0 };
+byId("radio-now-playing").calls.find(([k]) => k === "on_size_change")[1]({ width: 296 }, mcx);
+byId("radio-now-playing-text").calls.find(([k]) => k === "on_size_change")[1]({ width: 596 }, mcx);
+byId("radio-now-playing-text").calls.find(([k]) => k === "on_size_change")[1]({ width: 596.2 }, mcx);
+assert.deepEqual(view.fit, { line: 296, text: 596 }); assert.equal(redraws, 2);
 assert.equal(hasCall("loop"), true);
 stations.length = 0;
 assert.ok(texts().includes("ON AIR // Fixture One"));
