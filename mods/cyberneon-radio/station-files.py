@@ -226,36 +226,57 @@ def save_station(root, station):
             return False
         station.pop("contentWarning", None)  # Derived at read time.
         values.append(station)
+        write_stations(root, path, values, original, "Add")
+        return True
+
+
+def write_stations(root, path, values, original, retry):
+    validate_stations(values)
+    data = (json.dumps(values, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
+    if len(data) > MAX_BYTES:
+        raise ValueError("Radio file exceeds 1 MiB")
+    fd, temporary = tempfile.mkstemp(prefix=".radio-", dir=root)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Windows readers/editors may briefly hold a handle without delete
+        # sharing. Retry replacement boundedly, rechecking external edits on
+        # every attempt; never move/delete the original to work around it.
+        deadline = time.monotonic() + 0.5
+        while True:
+            latest = config_bytes(path)
+            if path.is_symlink() or latest != original:
+                raise ValueError("radio.json changed while saving; retry " + retry)
+            if path.exists() and os.name != "nt":
+                os.chmod(temporary, path.stat().st_mode & 0o777)
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError:
+                if os.name != "nt" or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.01)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def remove_station(root, source):
+    path = Path(root) / "radio.json"
+    if path.is_symlink():
+        raise ValueError("Cannot edit a symlinked radio.json; edit its target manually")
+    with station_lock(Path(root) / "radio.json.lock"):
+        original = config_bytes(path)
+        if original is None:
+            return False
+        values = json.loads(original.decode("utf-8-sig"), parse_constant=invalid_constant)
         validate_stations(values)
-        data = (json.dumps(values, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
-        if len(data) > MAX_BYTES:
-            raise ValueError("Radio file exceeds 1 MiB")
-        fd, temporary = tempfile.mkstemp(prefix=".radio-", dir=root)
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            # Windows readers/editors may briefly hold a handle without delete
-            # sharing. Retry replacement boundedly, rechecking external edits on
-            # every attempt; never move/delete the original to work around it.
-            deadline = time.monotonic() + 0.5
-            while True:
-                latest = config_bytes(path)
-                if path.is_symlink() or latest != original:
-                    raise ValueError("radio.json changed while saving; retry Add")
-                if path.exists() and os.name != "nt":
-                    os.chmod(temporary, path.stat().st_mode & 0o777)
-                try:
-                    os.replace(temporary, path)
-                    break
-                except PermissionError:
-                    if os.name != "nt" or time.monotonic() >= deadline:
-                        raise
-                    time.sleep(0.01)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        kept = [s for s in values if (s.get("open") or s.get("url")).strip() != source.strip()]
+        if len(kept) == len(values):
+            return False
+        write_stations(root, path, kept, original, "Remove")
         return True
 
 
@@ -271,6 +292,8 @@ def main():
         result = resolve_source(values[0], root)
     elif action == "save" and len(values) == 1:
         result = save_station(root, json.loads(values[0]))
+    elif action == "remove" and len(values) == 1:
+        result = remove_station(root, values[0])
     else:
         raise ValueError("Unknown radio storage action")
     print(json.dumps(result, ensure_ascii=False))
