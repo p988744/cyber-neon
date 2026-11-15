@@ -101,7 +101,6 @@ assert.ok(texts().includes("ON AIR // Fixture One"));
 assert.ok(texts().includes("Explicit content")); // keep warning for removed playing station
 stations.push(view.tuner.playing);
 // Equalizer: chip and panel move only while actually playing with ANIM on.
-const byId = id => nodes().find(n => n.calls.some(([k, v]) => k === "id" && v === id));
 const framesOf = node => node?.calls.find(([k]) => k === "frames");
 assert.equal(framesOf(byId("radio-chip-wave"))?.[1].length, 12);
 assert.ok(nodes().some(n => framesOf(n)?.[1][0].length === 36), "panel shows the full-width wave");
