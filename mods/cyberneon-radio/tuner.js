@@ -126,6 +126,23 @@ export class Tuner {
 }
 
 // Deterministically generated visual interference, never an audio asset.
+// Text equalizer frames for Element.frames(). Braille cells hold two thin
+// columns of up to four dots, so `width` cells draw 2 * width fine bars with
+// five heights (0..4). `count` frames loop seamlessly and are deterministic;
+// idleWave() is the flat line shown when nothing plays.
+const LEFT = [0x40, 0x04, 0x02, 0x01], RIGHT = [0x80, 0x20, 0x10, 0x08];
+const dots = (bits, height) => bits.slice(0, height).reduce((sum, bit) => sum | bit, 0);
+export function waveFrames(width, count = 12) {
+  return Array.from({ length: count }, (_, f) => {
+    const a = f / count * Math.PI * 2;
+    const height = bar => Math.max(0, Math.min(4, Math.round(
+      ((Math.sin(bar * 0.9 + a) + Math.sin(bar * 0.37 - a * 2) + Math.sin(bar * 1.7 + a * 3)) / 3 * 1.6 + 1) / 2 * 4)));
+    return Array.from({ length: width }, (_, i) =>
+      String.fromCharCode(0x2800 | dots(LEFT, height(i * 2)) | dots(RIGHT, height(i * 2 + 1)))).join("");
+  });
+}
+export const idleWave = width => "⣀".repeat(width);
+
 export function staticFrames() {
   return Array.from({ length: 7 }, (_, f) => Array.from({ length: 36 }, (_, i) =>
     ["░", "▒", "·", "│"][(i * 13 + f * 7 + (i ^ f)) % 4]).join(""));
