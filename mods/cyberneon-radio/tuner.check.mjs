@@ -96,9 +96,15 @@ console.log("tuner state checks passed");
   const { waveFrames, idleWave } = await import("./tuner.js");
   const frames = waveFrames(36, 12);
   assert.equal(frames.length, 12);
-  assert.ok(frames.every(f => [...f].length === 36 && /^[▁▂▃▄▅▆▇█]+$/.test(f)));
+  assert.ok(frames.every(f => [...f].length === 36 && /^[⠀-⣿]+$/.test(f)));
   assert.ok(new Set(frames).size > 6, "bars must move between frames");
   assert.ok(new Set([...frames[0]]).size > 3, "bars must differ across a frame");
+  // Two thin bars per cell, heights 0..4; both the full and a low bar occur.
+  const heights = frames.flatMap(f => [...f]).flatMap(c => {
+    const m = c.charCodeAt(0) & 0xff, count = bits => bits.filter((bit, i) => (m & bits.slice(0, i + 1).reduce((a, b) => a | b, 0)) === bits.slice(0, i + 1).reduce((a, b) => a | b, 0)).length;
+    return [count([0x40, 0x04, 0x02, 0x01]), count([0x80, 0x20, 0x10, 0x08])];
+  });
+  assert.ok(heights.includes(4) && heights.includes(1) && Math.max(...heights) <= 4, "bar heights span 1..4");
   assert.deepEqual(waveFrames(5), waveFrames(5));
-  assert.equal(idleWave(5), "▁▁▁▁▁");
+  assert.equal(idleWave(5), "⣀".repeat(5));
 }
