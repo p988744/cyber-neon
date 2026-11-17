@@ -22,7 +22,7 @@ class Element {
 const part = { new: () => new Element() };
 const host = {
   View: class {}, div: () => new Element(), h_flex: () => new Element(), v_flex: () => new Element(),
-  Popover: part, Slider: part, SliderTrack: part, SliderIndicator: part, SliderThumb: part,
+  Popup: { new: (id, trigger) => { const e = new Element(); e.calls.push(["id", id], ["trigger", trigger]); return e; } }, ScrollHandle: part, Slider: part, SliderTrack: part, SliderIndicator: part, SliderThumb: part,
   Input: part, InputState: { new: () => ({ text: "", handlers: {}, on(event, fn) { this.handlers[event] = fn; }, value() { return this.text; }, set_value(text) { this.text = text; }, focus() {}, release() {} }) },
   theme: () => ({}), shared: () => animations, staticFrames, waveFrames, idleWave, Tuner, RadioSearch, SEARCH_TAGS,
   localDirectory: () => ({ search: async () => [] }),
@@ -64,14 +64,12 @@ const texts = () => nodes().flatMap(n => n.items).filter(x => typeof x === "stri
 const hasCall = name => nodes().some(n => n.calls.some(([key]) => key === name));
 assert.ok(texts().includes("RADIO"));
 assert.ok(texts().includes("OFF"));
-assert.ok(texts().includes("Explicit content"));
-let popover = nodes().find(n => n.calls.some(([k, id]) => k === "id" && id === "radio-tuner"));
-// Component identity belongs to native Popover.new; the on_open_change handler
-// is what keeps the owner controlled as the chip and outside press toggle it.
-popover = nodes().find(n => n.calls.some(([k]) => k === "on_open_change"));
+assert.ok(nodes().some(n => n.calls.some(([k, id]) => k === "id" && id === "radio-tuner")));
+// The chip toggles the Popup open; the panel's own outside-press listener closes it.
 let notified = 0;
-popover.calls.find(([k]) => k === "on_open_change")[1](true, { notify: () => notified++ });
+nodes().find(n => n.calls.some(([k, id]) => k === "id" && id === "radio-chip")).calls.find(([k]) => k === "on_click")[1]({}, { notify: () => notified++ });
 assert.equal(view.open, true); assert.equal(notified, 1);
+assert.ok(texts().includes("Explicit content"));
 state.source = "test"; state.status = "playing";
 state.title = "A synthetic now playing line with enough text to scroll past the visible panel";
 view.tuner.playing = stations[0]; view.tuning = 1;
@@ -123,9 +121,22 @@ for (const [id, action] of [["radio-next", "next"], ["radio-prev", "prev"], ["ra
   node.calls.find(([key]) => key === "on_click")[1]({}, {});
   assert.equal(actionCalls.at(-1)[0], action);
 }
+// × must hand its station to tuner.remove (it used to call remove() with nothing).
+byId("radio-remove-0").calls.find(([key]) => key === "on_click")[1]({}, {});
+assert.equal(actionCalls.at(-1)[0], "remove");
+delete view.act;
+const removed = [], realRemove = view.tuner.remove;
+view.tuner.remove = station => { removed.push(station); return Promise.resolve(); };
+let removeJob;
+view.act("remove", { notify() {}, spawn: fn => { removeJob = fn({ notify() {} }); } }, actionCalls.at(-1)[2]);
+await removeJob;
+assert.equal(removed[0], actionCalls.at(-1)[2]);
+assert.ok(removed[0]?.name);
+view.tuner.remove = realRemove;
+view.act = (...args) => actionCalls.push(args);
 // Pin: outside clicks (open=false) are ignored only while pinned; x unpins and closes.
 view.open = true; view.pinned = false;
-const openChange = () => nodes().find(n => n.calls.some(([k]) => k === "on_open_change")).calls.find(([k]) => k === "on_open_change")[1];
+const openChange = () => (open, cx) => { assert.equal(open, false); nodes().find(n => n.calls.some(([k, id]) => k === "id" && id === "radio-panel")).calls.find(([k]) => k === "on_mouse_down_out")[1]({}, cx); };
 byId("radio-pin").calls.find(([k]) => k === "on_click")[1]({}, { notify() {} });
 assert.equal(view.pinned, true); assert.equal(saved.get("pinned"), "on");
 openChange()(false, { notify() {} });
@@ -134,7 +145,7 @@ byId("radio-close").calls.find(([k]) => k === "on_click")[1]({}, { notify() {} }
 assert.equal(view.pinned, false); assert.equal(saved.get("pinned"), "off"); assert.equal(view.open, false);
 view.open = true; openChange()(false, { notify() {} });
 assert.equal(view.open, false, "unpinned tuner dismisses on outside click");
-view.open = false;
+view.open = true; // later checks read the panel, which renders only while open
 // Toggle uses the actual controller; it stays available while tuning and
 // persists only the preference, never temporary gain or a playback action.
 view.ducking = new Ducking(engine);
@@ -395,6 +406,7 @@ for (const ending of ["shown", "dismissed", "queued-dismissal", "closed", "stop-
     assert.equal(radio.tuner.on(), false); assert.equal(radio.tuner.playing, null);
     assert.equal(radio.tuner.browserOpened, null); assert.equal(radio.tuner.error, null);
     assert.equal(radio.open, false);
+    radio.open = true; // reopen to read the panel (it renders only while open)
     const tree = radio.render();
     assert.ok(contentTexts(find(tree, "radio-chip")).includes("OFF"));
     assert.ok(contentTexts(tree).includes("RECEIVER OFF"));
@@ -412,6 +424,7 @@ for (const ending of ["shown", "dismissed", "queued-dismissal", "closed", "stop-
   assert.equal(radio.tuner.on(), false); assert.equal(radio.tuner.playing, null);
   radio.setOpen(false, cx);
   entries = [cleanStation]; // handoff warning survives browser station removal
+  radio.open = true; // reopen to read the panel (it renders only while open)
   const tree = radio.render(), chip = find(tree, "radio-chip");
   assert.ok(contentTexts(chip).includes("OFF"));
   assert.ok(contentTexts(chip).includes("EXPLICIT"));
@@ -455,5 +468,16 @@ for (let i = 0; i < 8; i++) await Promise.resolve();
 assert.equal(owner.ducking.nextWake(), 0);
 await owner.close(); deadlines[0].fn(ownerCx);
 assert.equal(owner.ducking.closed, true); assert.equal(owner.ducking.until, 0);
+// Results page 2 at a time: ▲/▼ and the wheel move by one, clamped to the end.
+{
+  const panel = new DirectoryPanel({ snapshot: () => ({ stations: [] }) }, { search: async () => [] });
+  const cx = { notify() {} };
+  panel.scrollResults(-10, 5, cx); assert.equal(panel.resultTop, 0);
+  panel.scrollResults(-25, 5, cx); assert.equal(panel.resultTop, 1);
+  for (let i = 0; i < 9; i++) panel.page(1, 5, cx);
+  assert.equal(panel.resultTop, 3);
+  panel.scrollResults(40, 5, cx); assert.equal(panel.resultTop, 2);
+  panel.page(1, 1, cx); assert.equal(panel.resultTop, 0);
+}
 delete globalThis.__radioTest;
 console.log("view controls, motion switch, status placement and layout keys passed");

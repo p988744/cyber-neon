@@ -4,6 +4,7 @@ import { RadioSearch, SEARCH_TAGS } from "./search.js";
 import { localDirectory } from "./search-client.js";
 
 const MONO = "Share Tech Mono";
+const PAGE = 2; // result cards shown at once
 
 // Created once in Radio.init with Radio's existing store. Owns no receiver.
 export class DirectoryPanel {
@@ -13,6 +14,8 @@ export class DirectoryPanel {
     this.expanded = false;
     this.closed = false;
     this.waits = new Set();
+    this.resultTop = 0;
+    this.wheel = 0;
     this.input = InputState.new({ placeholder: "Search by tag…" });
     this.input.on("submit", (_event, cx) => this.search(this.input.value(), cx));
   }
@@ -21,6 +24,7 @@ export class DirectoryPanel {
     this.input.set_value(tag);
     cx.spawn(async cx => {
       if (this.closed) return;
+      this.resultTop = 0;
       const pending = this.model.search(tag);
       cx.notify();
       await pending;
@@ -58,6 +62,19 @@ export class DirectoryPanel {
     for (const cancel of this.waits) cancel();
     this.input.release();
   }
+  // Wheel scrolling never moved this list inside the tuner surface, so results
+  // page PAGE at a time with ▲/▼ (the wheel pages too, if it ever arrives).
+  page(step, count, cx) {
+    this.resultTop = Math.max(0, Math.min(Math.max(0, count - PAGE), this.resultTop + step));
+    cx.notify();
+  }
+  scrollResults(dy, count, cx) {
+    this.wheel += dy;
+    if (Math.abs(this.wheel) < 30) return;
+    const step = this.wheel < 0 ? 1 : -1;
+    this.wheel = 0;
+    this.page(step, count, cx);
+  }
   button(id, label, t, action, enabled = true) {
     return div().id(id).px(6).h(24).flex().items_center().flex_shrink_0()
       .border(1).border_color(t.border).text_color(enabled ? t.working : t.dim)
@@ -67,6 +84,7 @@ export class DirectoryPanel {
   render(t) {
     const state = this.model.snapshot();
     const saved = this.store.snapshot().stations;
+    const top = Math.min(this.resultTop, Math.max(0, state.results.length - PAGE));
     const root = v_flex().id("radio-directory").gap(5).min_w(0).flex_shrink_0().font_family(MONO).text_size(10.5)
       .child(this.button("radio-directory-toggle", this.expanded ? "− RADIO BROWSER" : "+ FIND A STATION", t, cx => {
         this.expanded = !this.expanded;
@@ -85,8 +103,14 @@ export class DirectoryPanel {
       .when(!!state.message, el => el.child(div().text_color(t.done).child(state.message)))
       .when(state.loading, el => el.child(div().text_color(t.muted).child("Searching Radio Browser…")))
       .when(!state.loading && !!state.tag && !state.error && !state.results.length, el => el.child(div().text_color(t.muted).child("No stations found · try another tag.")))
-      .when(state.results.length > 0, el => el.child(v_flex().id("radio-search-results").max_h(190).overflow_y_scrollbar().gap(4)
-        .children(state.results.map((station, index) => {
+      .when(state.results.length > PAGE, el => el.child(h_flex().gap(4).items_center()
+        .child(this.button("radio-results-up", "▲", t, cx => this.page(-1, state.results.length, cx), top > 0))
+        .child(this.button("radio-results-down", "▼", t, cx => this.page(1, state.results.length, cx), top + PAGE < state.results.length))
+        .child(div().text_color(t.muted).child(`${top + 1}–${Math.min(top + PAGE, state.results.length)} / ${state.results.length}`))))
+      .when(state.results.length > 0, el => el.child(v_flex().id("radio-search-results").gap(4)
+        .on_scroll_wheel((e, cx) => this.scrollResults(e.delta.y, state.results.length, cx))
+        .children(state.results.slice(top, top + PAGE).map((station, i) => {
+          const index = top + i;
           const exists = saved.some(s => (s.open || s.url) === station.url || (station.radioBrowserId && s.radioBrowserId === station.radioBrowserId));
           return v_flex().id(`radio-result-${index}`).min_w(0).gap(2).p(5).border(1).border_color(t.border)
             .child(h_flex().min_w(0).gap(6).items_center()
