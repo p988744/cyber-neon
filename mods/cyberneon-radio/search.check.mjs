@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StationStore, parseStations } from "./stations.js";
-import { RadioSearch, directoryStation } from "./search.js";
+import { RadioSearch, directoryStation, oddPort } from "./search.js";
 const exec = promisify(execFile);
 const root = await mkdtemp(join(tmpdir(), "radio-add-"));
 const path = join(root, "radio.json");
@@ -100,5 +100,22 @@ try {
   await saving;
   assert.equal(refreshing.snapshot().stations.length, 1, "save refreshes after an older in-flight read completes");
   assert.throws(() => directoryStation({ name: "bad", url: "edl://bad" }));
+  // Ports: only non-standard ones are flagged.
+  assert.equal(oddPort("https://a.example:448/x"), "448");
+  assert.equal(oddPort("https://a.example/x"), null);
+  assert.equal(oddPort("http://a.example:80/x"), null);
+  // Homepage: kept when a browser can open it, dropped otherwise; survives the station contract.
+  assert.equal(directoryStation({ name: "h", url: "https://s.example/a", homepage: "https://site.example/" }).homepage, "https://site.example/");
+  assert.equal(directoryStation({ name: "h", url: "https://s.example/a", homepage: "javascript:alert(1)" }).homepage, undefined);
+  assert.equal(directoryStation({ name: "h", url: "https://s.example/a", homepage: "" }).homepage, undefined);
+  assert.equal(parseStations(JSON.stringify([{ name: "h", url: "https://s.example/a", homepage: "https://site.example/" }]))[0].homepage, "https://site.example/");
+  // Ranking: working standard-port streams first, directory (most played) order kept within each group.
+  {
+    const row = (name, url, ok) => ({ name, url, lastcheckok: ok, stationuuid: name });
+    const ranked = new RadioSearch({ search: async () => [row("odd", "https://a.example:448/x", 1), row("broken", "https://b.example/x", 0),
+      row("top", "https://c.example/x", 1), row("next", "http://d.example/x", 1)] }, { snapshot: () => ({ stations: [] }) });
+    const { results } = await ranked.search("lofi");
+    assert.deepEqual(results.map(r => r.name), ["top", "next", "odd", "broken"]);
+  }
   console.log("search.check ok (metadata, errors, stale responses, add, duplicates, live edits, concurrent saves, bounds)");
 } finally { delete globalThis.__searchStorageHost; await rm(root, { recursive: true, force: true }); }

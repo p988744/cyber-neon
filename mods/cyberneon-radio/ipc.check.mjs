@@ -1,7 +1,7 @@
 // node mods/cyberneon-radio/ipc.check.mjs
 import assert from "node:assert/strict";
 import { command, nowPlaying, parseReplies } from "./ipc.js";
-import { RadioEngine, NO_RECEIVER } from "./engine.js";
+import { RadioEngine, NO_RECEIVER, SIGNAL_WAIT_MS, noSignal } from "./engine.js";
 import { receiverClient, ReceiverGone } from "./receiver-client.js";
 
 const source = 'https://example.invalid/a?title="hello"&x=$(echo nope)';
@@ -80,6 +80,7 @@ function fixture(available = true) {
     { request_id: 2, error: "success", data: "Station" },
     { request_id: 3, error: "success", data: false },
     { request_id: 4, error: "success", data: true },
+    { request_id: 7, error: "success", data: false }, // core-idle: audio was heard
   ];
   await engine.poll();
   assert.equal(engine.snapshot().title, "Live song");
@@ -90,6 +91,31 @@ function fixture(available = true) {
   assert.equal(engine.snapshot().status, "idle");
   await engine.close();
 }
+// No audio yet: loading (not "playing") until SIGNAL_WAIT_MS, then NO SIGNAL
+// naming host:port; mpv giving up turns it into an error that clears the source.
+{
+  const bridge = fixture(), engine = new RadioEngine(bridge);
+  await engine.play("https://example.invalid:448/radio.mp3");
+  const silent = [{ request_id: 3, error: "success", data: false }, { request_id: 4, error: "success", data: false },
+    { request_id: 7, error: "success", data: true }];
+  bridge.request = async () => silent;
+  await engine.poll();
+  assert.equal(engine.snapshot().status, "loading"); assert.equal(engine.snapshot().error, null);
+  engine.loadingSince -= SIGNAL_WAIT_MS + 1;
+  await engine.poll();
+  assert.equal(engine.snapshot().status, "loading");
+  assert.equal(engine.snapshot().error, "NO SIGNAL // cannot reach example.invalid:448 · this network may block that port");
+  bridge.request = async () => [{ request_id: 3, error: "success", data: true }];
+  await engine.poll();
+  assert.equal(engine.snapshot().status, "error"); assert.equal(engine.snapshot().source, null);
+  assert.match(engine.snapshot().error, /^NO SIGNAL/);
+  await engine.poll(); // later polls keep it until the next play
+  assert.equal(engine.snapshot().status, "error"); assert.match(engine.snapshot().error, /^NO SIGNAL/);
+  await engine.close();
+}
+assert.equal(noSignal("https://a.example/x.mp3"), "NO SIGNAL // cannot reach a.example");
+assert.equal(noSignal("http://a.example:80/x"), "NO SIGNAL // cannot reach a.example");
+assert.equal(noSignal("/music/a.mp3"), "NO SIGNAL // cannot open this source");
 // Receiver loss clears liveness, but never resumes automatically. Ordinary
 // command/transport errors retain the healthy generation.
 for (const detectedByPoll of [true, false]) {

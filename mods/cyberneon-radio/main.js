@@ -1,6 +1,6 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex, Popup, ScrollHandle, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
-import { theme, shared, nextCommand, agents, terminals } from "herdr";
+import { theme, shared, nextCommand, agents, terminals, focused, run } from "herdr";
 import { RadioEngine } from "./engine.js";
 import { localReceiver } from "./bridge.js";
 import { localStations } from "./station-storage.js";
@@ -44,6 +44,8 @@ export default class Radio extends View {
     this.refreshing = false;
     // Scroll offsets live in handles: the panel rebuilds every equalizer frame.
     this.stationScroll = ScrollHandle.new();
+    // The panel takes the keyboard while open so Escape reaches it.
+    this.keys = cx.focus_handle();
     this.volume = SliderState.new({ min: 0, max: 100, step: 1, value: 50 });
     this.volume.on("change", (_value, cx) => cx.notify());
     this.volume.on("release", (value, cx) => this.act("volume", cx, value));
@@ -105,7 +107,32 @@ export default class Radio extends View {
     this.setOpen(open, cx);
   }
 
+  // Escape closes like an outside press (pinned stays open) and hands the
+  // keyboard back to the pane that had it; Popup does not do that for us.
+  escape(cx) {
+    this.requestOpen(false, cx);
+    this.returnFocus();
+  }
+
+  // The station's own site, in the system browser; playback is untouched.
+  openHomepage(station, cx) {
+    cx.spawn(async cx => {
+      try { await this.tuner.openBrowser(station.homepage); }
+      catch (error) { this.tuner.error = String(error.message ?? error); }
+      cx.notify();
+    });
+  }
+
+  returnFocus() {
+    if (this.returnTo) run("pane.focus", { pane: this.returnTo });
+    this.returnTo = null;
+  }
+
   setOpen(open, cx) {
+    if (open && !this.open) {
+      this.returnTo = focused()?.pane ?? null;
+      this.keys.focus();
+    }
     this.open = open;
     if (!open) {
       this.dismissalGeneration++;
@@ -239,7 +266,7 @@ export default class Radio extends View {
         .child(div().font_family("Chakra Petch").font_weight(700).text_color(t.accent).child("RADIO // SIGNAL DECK"))
         .child(h_flex().gap(4)
           .child(this.button("radio-pin", this.pinned ? "PINNED" : "PIN", cx => this.setPinned(!this.pinned, cx)))
-          .child(this.button("radio-close", "×", cx => { this.setPinned(false, cx); this.setOpen(false, cx); }))))
+          .child(this.button("radio-close", "×", cx => { this.setPinned(false, cx); this.setOpen(false, cx); this.returnFocus(); }))))
       .child(div().text_size(18).text_color(t.foreground).truncate().child(station?.name || (list.loading ? "LOADING STATIONS" : "NO STATIONS")))
       .when(Boolean(playing) && (!station || this.tuner.key(playing) !== this.tuner.key(station)), el => el.child(div().text_color(t.working).child(`ON AIR // ${playing.name}`)))
       .when(Boolean(station?.genre), el => el.child(div().child(station.genre)))
@@ -284,11 +311,14 @@ export default class Radio extends View {
           .child(div().id(`radio-station-${i}`).flex_1().min_w(0).truncate().px(6).py(4).cursor_pointer()
             .hover(el => el.bg(t.hover)).on_click((_e, cx) => this.act("choose", cx, s))
             .child(`${s.name}${s.explicit ? " // Explicit content" : ""}`))
+          .when(Boolean(s.homepage), row => row.child(div().id(`radio-homepage-${i}`).px(6).py(4).flex_none().cursor_pointer().text_color(t.dim)
+            .tooltip(`Open ${s.homepage}`).hover(el => el.bg(t.hover).text_color(t.accent))
+            .on_click((_e, cx) => this.openHomepage(s, cx)).child("↗")))
           .child(div().id(`radio-remove-${i}`).px(6).py(4).flex_none().cursor_pointer().text_color(t.dim)
             .tooltip(`Remove ${s.name}`).hover(el => el.bg(t.hover).text_color(t.blocked))
             .on_click((_e, cx) => this.act("remove", cx, s)).child("×"))))))
       .child(div().text_size(10).text_color(t.dim).child("PLAY to power on. Select/next/prev tune while on."))
-      .child(this.directory.render(t));
+      .child(this.directory.render(t, (s, cx) => this.openHomepage(s, cx)));
   }
 
   render(cx) {
@@ -318,7 +348,8 @@ export default class Radio extends View {
       .child(Popup.new("radio-tuner", chip.on_click((_e, cx) => {
         if (Date.now() - (this.outsideAt ?? 0) > 250) this.setOpen(!this.open, cx);
       })).anchor("bottom_right")
-        .when(this.open, el => el.content(this.panel().id("radio-panel")
+        .when(this.open, el => el.content(this.panel().id("radio-panel").track_focus(this.keys)
+          .on_key_down((e, cx) => { if (e.key === "escape") this.escape(cx); })
           .on_mouse_down_out((_e, cx) => this.requestOpen(false, cx)))));
   }
 }

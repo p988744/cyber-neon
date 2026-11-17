@@ -5,7 +5,7 @@ export const MAX_STATIONS = 1000;
 export function stationMetadata(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a station object");
   const station = { ...value };
-  for (const field of ["name", "url", "open", "genre", "note"]) {
+  for (const field of ["name", "url", "open", "genre", "note", "homepage"]) {
     if (station[field] === undefined && field !== "name") continue;
     if (typeof station[field] !== "string" || !station[field].trim() || /[\x00-\x1f\x7f]/.test(station[field])) {
       throw new Error(`Station ${field} must be nonempty text without control characters`);
