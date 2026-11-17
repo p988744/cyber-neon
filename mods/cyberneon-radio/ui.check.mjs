@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { Ducking } from "./ducking.js";
 import { Tuner, staticFrames, waveFrames, idleWave } from "./tuner.js";
-import { RadioSearch, SEARCH_TAGS } from "./search.js";
+import { RadioSearch, SEARCH_TAGS, oddPort } from "./search.js";
 import { StationStore } from "./stations.js";
 let animations = true;
 const saved = new Map();
@@ -25,7 +25,7 @@ const host = {
   View: class {}, div: () => new Element(), h_flex: () => new Element(), v_flex: () => new Element(),
   Popup: { new: (id, trigger) => { const e = new Element(); e.calls.push(["id", id], ["trigger", trigger]); return e; } }, ScrollHandle: part, Slider: part, SliderTrack: part, SliderIndicator: part, SliderThumb: part,
   Input: part, InputState: { new: () => ({ text: "", handlers: {}, on(event, fn) { this.handlers[event] = fn; }, value() { return this.text; }, set_value(text) { this.text = text; }, focus() {}, release() {} }) },
-  theme: () => ({}), shared: () => animations, staticFrames, waveFrames, idleWave, Tuner, RadioSearch, SEARCH_TAGS,
+  theme: () => ({}), shared: () => animations, staticFrames, waveFrames, idleWave, Tuner, RadioSearch, SEARCH_TAGS, oddPort,
   localDirectory: () => ({ search: async () => [] }),
   Ducking,
   localBrowser: () => async () => {},
@@ -162,6 +162,25 @@ view.outsideAt = 0; byId("radio-chip").calls.find(([k]) => k === "on_click")[1](
 view.pinned = true; escape();
 assert.equal(view.open, true, "pinned tuner ignores Escape but returns the keyboard"); assert.equal(runs.length, 2);
 view.pinned = false;
+// ↗ opens the saved station's homepage in the browser; rows without one have no button.
+assert.equal(byId("radio-homepage-0"), undefined);
+stations[0].homepage = "https://site.example/";
+const opened = [], realOpen = view.tuner.openBrowser;
+view.tuner.openBrowser = async url => { opened.push(url); };
+let homeJob;
+byId("radio-homepage-0").calls.find(([k]) => k === "on_click")[1]({}, { spawn: fn => { homeJob = fn({ notify() {} }); } });
+await homeJob;
+assert.deepEqual(opened, ["https://site.example/"]);
+// Search results link to the station's site the same way.
+view.directory.expanded = true;
+const realSnap = view.directory.model.snapshot;
+view.directory.model.snapshot = () => ({ results: [{ name: "R", url: "https://s.example/a", homepage: "https://r.example/", lastCheckOK: true, lastCheck: "" }, { name: "N", url: "https://s.example/b", lastCheckOK: true, lastCheck: "" }] });
+assert.equal(byId("radio-result-home-1"), undefined);
+byId("radio-result-home-0").calls.find(([k]) => k === "on_click")[1]({}, { spawn: fn => { homeJob = fn({ notify() {} }); } });
+await homeJob;
+assert.deepEqual(opened, ["https://site.example/", "https://r.example/"]);
+view.directory.model.snapshot = realSnap; view.directory.expanded = false;
+delete stations[0].homepage; view.tuner.openBrowser = realOpen;
 view.open = true; // later checks read the panel, which renders only while open
 // Toggle uses the actual controller; it stays available while tuning and
 // persists only the preference, never temporary gain or a playback action.

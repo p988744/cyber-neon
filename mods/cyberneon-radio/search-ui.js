@@ -1,6 +1,6 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState } from "gpui-base";
-import { RadioSearch, SEARCH_TAGS } from "./search.js";
+import { RadioSearch, SEARCH_TAGS, oddPort } from "./search.js";
 import { localDirectory } from "./search-client.js";
 
 const MONO = "Share Tech Mono";
@@ -81,7 +81,7 @@ export class DirectoryPanel {
       .when(enabled, el => el.cursor_pointer().hover(s => s.bg(t.hover)).on_click((_e, cx) => action(cx)))
       .child(label);
   }
-  render(t) {
+  render(t, openHomepage) {
     const state = this.model.snapshot();
     const saved = this.store.snapshot().stations;
     const top = Math.min(this.resultTop, Math.max(0, state.results.length - PAGE));
@@ -103,6 +103,7 @@ export class DirectoryPanel {
       .when(!!state.message, el => el.child(div().text_color(t.done).child(state.message)))
       .when(state.loading, el => el.child(div().text_color(t.muted).child("Searching Radio Browser…")))
       .when(!state.loading && !!state.tag && !state.error && !state.results.length, el => el.child(div().text_color(t.muted).child("No stations found · try another tag.")))
+      .when(state.results.length > 0, el => el.child(div().text_color(t.dim).child("Most played first · working, standard-port streams on top.")))
       .when(state.results.length > PAGE, el => el.child(h_flex().gap(4).items_center()
         .child(this.button("radio-results-up", "▲", t, cx => this.page(-1, state.results.length, cx), top > 0))
         .child(this.button("radio-results-down", "▼", t, cx => this.page(1, state.results.length, cx), top + PAGE < state.results.length))
@@ -115,8 +116,14 @@ export class DirectoryPanel {
           return v_flex().id(`radio-result-${index}`).min_w(0).gap(2).p(5).border(1).border_color(t.border)
             .child(h_flex().min_w(0).gap(6).items_center()
               .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(station.name))
+              .when(!!station.homepage, el => el.child(this.button(`radio-result-home-${index}`, "↗", t, cx => openHomepage(station, cx))
+                .tooltip(`Open ${station.homepage}`)))
               .child(this.button(`radio-add-${index}`, exists ? "SAVED" : state.saving === station.url ? "SAVING…" : "ADD", t, cx => this.add(station, cx), !exists && !state.saving)))
-            .child(div().truncate().text_color(t.muted).child(`${station.country} · ${station.codec} / ${station.bitrate || "?"} kbps`))
+            .child(h_flex().min_w(0).gap(6)
+              .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(`${station.country} · ${station.codec} / ${station.bitrate || "?"} kbps`))
+              .when(!!oddPort(station.url), el => el.child(div().id(`radio-port-${index}`).flex_none().text_color(t.blocked)
+                .tooltip(`Streams on port ${oddPort(station.url)}; networks that block non-standard ports get no signal`)
+                .child(`PORT ${oddPort(station.url)}`))))
             .child(div().truncate().text_color(station.lastCheckOK === null ? t.muted : station.lastCheckOK ? t.done : t.blocked)
               .child(`CHECK ${station.lastCheckOK === null ? "UNKNOWN" : station.lastCheckOK ? "OK" : "FAILED"} · ${station.lastCheck}`));
         }))));

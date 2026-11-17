@@ -193,7 +193,7 @@ def validate_stations(values):
     for station in values:
         if not isinstance(station, dict):
             raise ValueError("Expected a station object")
-        for field in ("name", "url", "open", "genre", "note"):
+        for field in ("name", "url", "open", "genre", "note", "homepage"):
             if field not in station and field != "name":
                 continue
             value = station.get(field)

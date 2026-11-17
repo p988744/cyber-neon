@@ -114,6 +114,15 @@ export default class Radio extends View {
     this.returnFocus();
   }
 
+  // The station's own site, in the system browser; playback is untouched.
+  openHomepage(station, cx) {
+    cx.spawn(async cx => {
+      try { await this.tuner.openBrowser(station.homepage); }
+      catch (error) { this.tuner.error = String(error.message ?? error); }
+      cx.notify();
+    });
+  }
+
   returnFocus() {
     if (this.returnTo) run("pane.focus", { pane: this.returnTo });
     this.returnTo = null;
@@ -302,11 +311,14 @@ export default class Radio extends View {
           .child(div().id(`radio-station-${i}`).flex_1().min_w(0).truncate().px(6).py(4).cursor_pointer()
             .hover(el => el.bg(t.hover)).on_click((_e, cx) => this.act("choose", cx, s))
             .child(`${s.name}${s.explicit ? " // Explicit content" : ""}`))
+          .when(Boolean(s.homepage), row => row.child(div().id(`radio-homepage-${i}`).px(6).py(4).flex_none().cursor_pointer().text_color(t.dim)
+            .tooltip(`Open ${s.homepage}`).hover(el => el.bg(t.hover).text_color(t.accent))
+            .on_click((_e, cx) => this.openHomepage(s, cx)).child("↗")))
           .child(div().id(`radio-remove-${i}`).px(6).py(4).flex_none().cursor_pointer().text_color(t.dim)
             .tooltip(`Remove ${s.name}`).hover(el => el.bg(t.hover).text_color(t.blocked))
             .on_click((_e, cx) => this.act("remove", cx, s)).child("×"))))))
       .child(div().text_size(10).text_color(t.dim).child("PLAY to power on. Select/next/prev tune while on."))
-      .child(this.directory.render(t));
+      .child(this.directory.render(t, (s, cx) => this.openHomepage(s, cx)));
   }
 
   render(cx) {
