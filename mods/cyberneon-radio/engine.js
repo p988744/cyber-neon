@@ -2,6 +2,19 @@ import { command, nowPlaying } from "./ipc.js";
 import { ReceiverGone } from "./receiver-client.js";
 
 export const NO_RECEIVER = "NO RECEIVER // install mpv";
+// mpv sits on an unreachable stream for ~50s before going idle, reporting nothing.
+export const SIGNAL_WAIT_MS = 10000;
+
+// Names the host and port: a firewall that drops non-standard ports is the
+// usual cause (seen live: :448 and :7920 blocked, :80/:443 fine).
+export function noSignal(source) {
+  let url;
+  try { url = new URL(source); } catch { return "NO SIGNAL // cannot open this source"; }
+  if (!/^https?:$/.test(url.protocol)) return "NO SIGNAL // cannot open this source";
+  const port = url.port;
+  return `NO SIGNAL // cannot reach ${url.hostname}${port ? `:${port}` : ""}` +
+    (port && port !== "80" && port !== "443" ? " · this network may block that port" : "");
+}
 
 // One instance per layout-owned Radio View. The injected bridge owns only local processes.
 export class RadioEngine {
@@ -85,7 +98,11 @@ export class RadioEngine {
           if (error instanceof ReceiverGone && attempt === 0 && !this.closed) continue;
           throw error;
         }
-        if (!this.closed) this.state = { ...this.state, status: "loading", source: sources[0], title: "", paused: false, volume, error: null };
+        if (!this.closed) {
+          this.loadingSince = Date.now();
+          this.heard = false; // set once mpv actually plays audio from this queue
+          this.state = { ...this.state, status: "loading", source: sources[0], title: "", paused: false, volume, error: null };
+        }
         return;
       }
     });
@@ -119,16 +136,23 @@ export class RadioEngine {
   poll() {
     return this.enqueue(async () => {
       if (!this.started) return;
-      const props = ["metadata", "media-title", "idle-active", "pause", "volume", "mute"];
+      const props = ["metadata", "media-title", "idle-active", "pause", "volume", "mute", "core-idle"];
       const replies = await this.request(props.map((p, i) => command("get", p, i + 1)).join(""), true);
       if (this.closed) return;
       const data = Object.fromEntries(replies.filter((r) => r.error === "success").map((r) => [props[r.request_id - 1], r.data]));
       const idle = data["idle-active"] === true;
+      if (!idle && data["core-idle"] === false) this.heard = true;
+      // Never heard and mpv gave up (idle), or still silent after the wait: no signal.
+      const lost = this.state.source && !this.heard && (idle || (!data.pause && Date.now() - this.loadingSince > SIGNAL_WAIT_MS))
+        ? noSignal(this.state.source) : null;
+      // A NO SIGNAL that ended playback stays until the next play clears it.
+      const kept = idle && !this.state.source && this.state.error?.startsWith("NO SIGNAL") ? this.state.error : null;
       if (idle && this.state.source) this.resetVolume();
-      this.state = { ...this.state, status: idle ? "idle" : data.pause ? "paused" : "playing",
+      this.state = { ...this.state,
+        status: (lost && idle) || kept ? "error" : idle ? "idle" : data.pause ? "paused" : this.heard ? "playing" : "loading",
         title: idle ? "" : nowPlaying(data.metadata, data["media-title"]), source: idle ? null : this.state.source,
         paused: data.pause ?? this.state.paused, volume: idle && this.volumePolicy ? this.state.volume : data.volume ?? this.state.volume,
-        muted: data.mute ?? this.state.muted, error: null };
+        muted: data.mute ?? this.state.muted, error: lost ?? kept };
     });
   }
 

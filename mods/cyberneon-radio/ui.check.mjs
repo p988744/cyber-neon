@@ -8,6 +8,7 @@ import { RadioSearch, SEARCH_TAGS } from "./search.js";
 import { StationStore } from "./stations.js";
 let animations = true;
 const saved = new Map();
+const runs = [], focusHandle = () => ({ focused: 0, focus() { this.focused++; } });
 let hostAgents = [], hostTerminals = [];
 class Element {
   constructor() {
@@ -38,6 +39,7 @@ const host = {
   localStations: () => ({ snapshot: () => ({ stations: [] }), refresh: async () => {} }),
   SliderState: { new: () => ({ on() {}, release() {}, value: () => 50 }) },
   agents: () => hostAgents, terminals: () => hostTerminals,
+  focused: () => ({ pane: "pane-1" }), run: (name, args) => runs.push([name, args]),
   nextCommand: () => new Promise(() => {}),
   localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) },
 };
@@ -54,7 +56,7 @@ const state = { source: null, title: "", error: null, status: "idle" };
 const engine = { snapshot: () => ({ ...state }) };
 const store = { snapshot: () => ({ stations, loading: false, error: null, path: "/fixture/stations.json" }) };
 const view = new Radio();
-Object.assign(view, { engine, store, directory: new DirectoryPanel(store), tuner: new Tuner(engine, store), open: false, tuning: 0, fit: { line: 0, text: 0 }, volume: { value: () => 50 } });
+Object.assign(view, { engine, store, directory: new DirectoryPanel(store), tuner: new Tuner(engine, store), open: false, tuning: 0, fit: { line: 0, text: 0 }, volume: { value: () => 50 }, keys: focusHandle() });
 function all(root) {
   if (!root || typeof root !== "object") return [];
   return [root, ...root.items.flatMap(all), ...root.calls.filter(([name]) => ["content", "trigger"].includes(name)).flatMap(([, el]) => all(el))];
@@ -145,6 +147,21 @@ byId("radio-close").calls.find(([k]) => k === "on_click")[1]({}, { notify() {} }
 assert.equal(view.pinned, false); assert.equal(saved.get("pinned"), "off"); assert.equal(view.open, false);
 view.open = true; openChange()(false, { notify() {} });
 assert.equal(view.open, false, "unpinned tuner dismisses on outside click");
+// Opening takes the keyboard; Escape closes and hands it back to the pane that had it.
+view.open = false; view.outsideAt = 0; runs.length = 0;
+const focusedBefore = view.keys.focused;
+byId("radio-chip").calls.find(([k]) => k === "on_click")[1]({}, { notify() {} });
+assert.equal(view.open, true); assert.equal(view.keys.focused, focusedBefore + 1);
+const escape = () => byId("radio-panel").calls.find(([k]) => k === "on_key_down")[1]({ key: "escape" }, { notify() {} });
+assert.ok(byId("radio-panel").calls.some(([k, h]) => k === "track_focus" && h === view.keys));
+byId("radio-panel").calls.find(([k]) => k === "on_key_down")[1]({ key: "a" }, { notify() {} });
+assert.equal(view.open, true, "other keys leave the tuner open");
+view.outsideAt = 0; escape();
+assert.equal(view.open, false); assert.deepEqual(runs, [["pane.focus", { pane: "pane-1" }]]);
+view.outsideAt = 0; byId("radio-chip").calls.find(([k]) => k === "on_click")[1]({}, { notify() {} });
+view.pinned = true; escape();
+assert.equal(view.open, true, "pinned tuner ignores Escape but returns the keyboard"); assert.equal(runs.length, 2);
+view.pinned = false;
 view.open = true; // later checks read the panel, which renders only while open
 // Toggle uses the actual controller; it stays available while tuning and
 // persists only the preference, never temporary gain or a playback action.
@@ -189,7 +206,7 @@ for (const command of ["next", "prev"]) {
   };
   const radio = new Radio();
   Object.assign(radio, { engine: actualEngine, store: actualStore, directory: new DirectoryPanel(actualStore), tuner: new Tuner(actualEngine, actualStore),
-    open: false, dismissalGeneration: 0, warning: null, warningReady: null, warningGeneration: 0, tuning: 0, volume: { value: () => 50, release() {} } });
+    open: false, dismissalGeneration: 0, warning: null, warningReady: null, warningGeneration: 0, tuning: 0, volume: { value: () => 50, release() {} }, keys: focusHandle() });
   radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
   const tasks = [];
   const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); }, timer: { after() {} } };
@@ -270,7 +287,7 @@ for (const explicit of [true, false]) {
     const radio = new Radio();
     Object.assign(radio, { engine, store, directory: new DirectoryPanel(store), tuner: new Tuner(engine, store), open: false,
       dismissalGeneration: 0, warning: null, warningReady: null, warningGeneration: 0, tuning: 0,
-      volume: { value: () => 50, release() {} } });
+      volume: { value: () => 50, release() {} }, keys: focusHandle() });
     radio.tuner.select(cleanStation); radio.tuner.playing = cleanStation;
     const tasks = [];
     const cx = { notify() {}, spawn(fn) { tasks.push(fn(cx)); }, timer: { after() {} } };
@@ -440,7 +457,7 @@ for (const ending of ["shown", "dismissed", "queued-dismissal", "closed", "stop-
 // Host changes rerender the owner; no timer reads live host data. Only a
 // blocked edge arms a deadline, and stale deadline callbacks cannot survive close.
 const owner = new Radio(), timers = new Map(), deadlines = [], ownerTasks = [];
-const ownerCx = { notify() {}, timer: {
+const ownerCx = { notify() {}, focus_handle: focusHandle, timer: {
   every(ms, fn) { timers.set(ms, fn); },
   after(ms, fn) { deadlines.push({ ms, fn }); },
 }, spawn(fn) { const task = fn(ownerCx); ownerTasks.push(task); } };
