@@ -1,5 +1,5 @@
 import { View, div } from "gpui-kit";
-import { h_flex, v_flex, Popover, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
+import { h_flex, v_flex, Popup, ScrollHandle, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, shared, nextCommand, agents, terminals } from "herdr";
 import { RadioEngine } from "./engine.js";
 import { localReceiver } from "./bridge.js";
@@ -42,6 +42,8 @@ export default class Radio extends View {
     this.warningReady = null;
     this.polling = false;
     this.refreshing = false;
+    // Scroll offsets live in handles: the panel rebuilds every equalizer frame.
+    this.stationScroll = ScrollHandle.new();
     this.volume = SliderState.new({ min: 0, max: 100, step: 1, value: 50 });
     this.volume.on("change", (_value, cx) => cx.notify());
     this.volume.on("release", (value, cx) => this.act("volume", cx, value));
@@ -94,8 +96,11 @@ export default class Radio extends View {
     cx.notify();
   }
 
-  // The popover reports outside clicks as a close request; a pinned tuner ignores it.
+  // A press outside the panel is a close request; a pinned tuner ignores it.
+  // Popup (not Popover): Popover's window layer swallowed the wheel and, when
+  // pinned, every press outside the panel.
   requestOpen(open, cx) {
+    if (!open) this.outsideAt = Date.now();
     if (!open && this.pinned) return;
     this.setOpen(open, cx);
   }
@@ -171,7 +176,7 @@ export default class Radio extends View {
       const job = action === "next" ? this.tuner.step(1, beforePlay) : action === "prev" ? this.tuner.step(-1, beforePlay)
         : action === "choose" ? this.tuner.choose(value, beforePlay)
         : action === "power" ? this.tuner.power(beforePlay)
-        : action === "volume" ? this.tuner.volume(value) : this.tuner[action]();
+        : action === "volume" ? this.tuner.volume(value) : action === "remove" ? this.tuner.remove(value) : this.tuner[action]();
       await job;
       cx.notify();
     });
@@ -273,7 +278,7 @@ export default class Radio extends View {
       .child(div().text_size(10).text_color(t.dim).child(busy ? "TUNING…" : `${on ? state.status.toUpperCase() : "OFF"} // ${list.stations.length} STATIONS${list.loading ? " // REFRESHING" : ""}`))
       .when(Boolean(error), el => el.child(div().text_color(t.blocked).child(String(error))))
       .when(!station && !list.loading, el => el.child(div().child(`Add your stations to ${list.path || "the radio station file"}. No stations or music are bundled.`)))
-      .when(Boolean(station), el => el.child(v_flex().id("radio-stations").max_h(100).overflow_y_scrollbar().gap(2)
+      .when(Boolean(station), el => el.child(v_flex().id("radio-stations").max_h(100).overflow_y_scrollbar().track_scroll(this.stationScroll).gap(2)
         .children(list.stations.map((s, i) => h_flex().id(`radio-station-row-${i}`).items_center().gap(2)
           .bg(this.tuner.key(s) === this.tuner.key(station) ? t.selected : t.popover)
           .child(div().id(`radio-station-${i}`).flex_1().min_w(0).truncate().px(6).py(4).cursor_pointer()
@@ -308,8 +313,12 @@ export default class Radio extends View {
       .when(Boolean(explicit), el => el.child(div().id("radio-explicit").flex_none().text_size(9).text_color(t.done)
         .tooltip("Explicit content").child("EXPLICIT")));
     return h_flex().size_full().px(8).items_center().bg(t.chrome).border_t(1).border_color(t.border)
-      .child(Popover.new("radio-tuner").anchor("bottom_right").open(this.open)
-        .on_open_change((open, cx) => this.requestOpen(open, cx))
-        .trigger(chip).content(this.panel()));
+      // ponytail: a chip press also reaches on_mouse_down_out first; the 250ms
+      // window keeps that press from closing then reopening the panel.
+      .child(Popup.new("radio-tuner", chip.on_click((_e, cx) => {
+        if (Date.now() - (this.outsideAt ?? 0) > 250) this.setOpen(!this.open, cx);
+      })).anchor("bottom_right")
+        .when(this.open, el => el.content(this.panel().id("radio-panel")
+          .on_mouse_down_out((_e, cx) => this.requestOpen(false, cx)))));
   }
 }
