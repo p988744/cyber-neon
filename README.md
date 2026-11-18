@@ -132,6 +132,16 @@ is a browser link only. [Policy evidence and Steam → official @Superdoudev →
 playlist provenance](mods/cyberneon-radio/BROWSER.md#source-policy-evidence) explain
 that distinction; no source-owner messages were sent for this work.
 
+## Agent usage (Claude Code)
+
+The agents card reads context and 5h/7d usage from the status line at the bottom of an agent's screen. Claude Code has no such line by default, so the card shows `NO TELEMETRY`. This repo ships one (needs Node). Add it to `~/.claude/settings.json` (on Windows, `C:\Users\<you>\.claude\settings.json`):
+
+```json
+{ "statusLine": { "type": "command", "command": "node /path/to/cyber-neon/mods/cyberneon-agents/claude-statusline.mjs" } }
+```
+
+It prints `Opus 5.5 │ ctx ◑ 42% │ 5h ◔ 30% ⟳ 1h24m │ 7d ◔ 5% ⟳ 6d17h`. The 5h and 7d parts only appear when your Claude Code version reports rate limits (subscription plans).
+
 ## What it runs and reaches
 
 - `git` in your spaces' folders: read-only to find branches and remotes, and `git log` / `git show --stat` for the GRAPH page. The only writes come from your clicks on **▶ LAUNCH** or **▶ DISPATCH**: `git worktree add` (making the `milestone-…` or `issue-…` branch if it doesn't exist yet), local only.

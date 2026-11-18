@@ -73,3 +73,18 @@ assert.equal(oc.ctx, 9);
 assert.equal(oc.cost, "$0.00");
 assert.equal(oc.h5, null);
 console.log("opencode ok");
+
+// The bundled Claude Code status line must round-trip through the parser.
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+{
+  const script = fileURLToPath(new URL("./claude-statusline.mjs", import.meta.url));
+  const run = (input) => spawnSync(process.execPath, [script], { input, encoding: "utf8" }).stdout;
+  const at = Math.floor(Date.now() / 1000);
+  const t = telemetry(run(JSON.stringify({ model: { display_name: "Opus 5.5" }, context_window: { used_percentage: 42 },
+    rate_limits: { five_hour: { used_percentage: 30, resets_at: at + 5100 }, seven_day: { used_percentage: 5, resets_at: at + 600000 } } })));
+  assert.equal(t.model, "Opus 5.5"); assert.equal(t.ctx, 42); assert.equal(t.h5, 30); assert.equal(t.d7, 5);
+  assert.ok(t.h5Reset && t.d7Reset);
+  assert.equal(telemetry(run("garbage")), null);
+  console.log("statusline ok");
+}
